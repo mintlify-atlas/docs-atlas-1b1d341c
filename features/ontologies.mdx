@@ -1,0 +1,511 @@
+---
+title: 'Ontologies'
+description: 'Domain vocabulary and entity definitions'
+icon: 'sitemap'
+---
+
+## Overview
+
+Ontologies define the vocabulary, entity types, properties, and relationships for your project domain using OWL/Turtle format. They structure storage schemas, constrain ML model features, and define digital twin entity types.
+
+**Use cases:**
+- Schema generation for storage backends
+- Feature engineering for ML models
+- Entity type definitions for digital twins
+- Cross-source data integration
+- Semantic validation
+
+## Ontology Structure
+
+```go pkg/models/ontology.go:10
+type Ontology struct {
+    ID          string
+    ProjectID   string
+    Name        string
+    Description string
+    Version     string
+    Content     string    // Turtle (.ttl) format
+    Status      string    // draft, active, archived, needs_review
+    IsGenerated bool      // true if auto-generated
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
+}
+```
+
+## Creating an Ontology
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST http://localhost:8080/api/ontologies \
+      -H "Content-Type: application/json" \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "name": "customer-ontology",
+        "description": "Customer domain vocabulary",
+        "version": "1.0",
+        "status": "draft",
+        "content": "@prefix : <http://example.org/customer#> .\n@prefix owl: <http://www.w3.org/2002/07/owl#> .\n@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n:Customer a owl:Class ;\n    rdfs:label \"Customer\" .\n\n:email a owl:DatatypeProperty ;\n    rdfs:domain :Customer ;\n    rdfs:range xsd:string .\n\n:age a owl:DatatypeProperty ;\n    rdfs:domain :Customer ;\n    rdfs:range xsd:int ."
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Response">
+    ```json
+    {
+      "id": "ont-uuid-7890",
+      "project_id": "proj-uuid-1234",
+      "name": "customer-ontology",
+      "description": "Customer domain vocabulary",
+      "version": "1.0",
+      "content": "...",
+      "status": "draft",
+      "is_generated": false,
+      "created_at": "2026-03-01T10:00:00Z",
+      "updated_at": "2026-03-01T10:00:00Z"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Turtle Syntax
+
+### Prefixes
+
+Define namespace shortcuts at the top of the ontology:
+
+```turtle
+@prefix : <http://example.org/domain#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+```
+
+### Classes (Entity Types)
+
+Define entity types using `owl:Class`:
+
+```turtle
+:Customer a owl:Class ;
+    rdfs:label "Customer" ;
+    rdfs:comment "A customer entity" .
+
+:Order a owl:Class ;
+    rdfs:label "Order" ;
+    rdfs:comment "A customer order" .
+```
+
+### Datatype Properties (Attributes)
+
+Define scalar attributes:
+
+```turtle
+:email a owl:DatatypeProperty ;
+    rdfs:label "email" ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:age a owl:DatatypeProperty ;
+    rdfs:label "age" ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:int .
+
+:totalAmount a owl:DatatypeProperty ;
+    rdfs:label "totalAmount" ;
+    rdfs:domain :Order ;
+    rdfs:range xsd:decimal .
+```
+
+**Supported XSD types:**
+- `xsd:string` — Text values
+- `xsd:int` / `xsd:integer` — Integers
+- `xsd:float` / `xsd:double` — Floating point
+- `xsd:boolean` — True/false
+- `xsd:dateTime` — Timestamps
+
+### Object Properties (Relationships)
+
+Define relationships between entities:
+
+```turtle
+:hasOrder a owl:ObjectProperty ;
+    rdfs:label "hasOrder" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Order .
+
+:placedBy a owl:ObjectProperty ;
+    rdfs:label "placedBy" ;
+    rdfs:domain :Order ;
+    rdfs:range :Customer ;
+    owl:inverseOf :hasOrder .
+```
+
+## Complete Example
+
+```turtle E-commerce Ontology
+@prefix : <http://example.org/ecommerce#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Classes
+:Customer a owl:Class ;
+    rdfs:label "Customer" ;
+    rdfs:comment "A customer entity" .
+
+:Order a owl:Class ;
+    rdfs:label "Order" ;
+    rdfs:comment "A customer order" .
+
+:Product a owl:Class ;
+    rdfs:label "Product" ;
+    rdfs:comment "A product in the catalog" .
+
+# Customer properties
+:customerId a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:email a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:name a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:registeredAt a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:dateTime .
+
+# Order properties
+:orderId a owl:DatatypeProperty ;
+    rdfs:domain :Order ;
+    rdfs:range xsd:string .
+
+:totalAmount a owl:DatatypeProperty ;
+    rdfs:domain :Order ;
+    rdfs:range xsd:decimal .
+
+:orderDate a owl:DatatypeProperty ;
+    rdfs:domain :Order ;
+    rdfs:range xsd:dateTime .
+
+:status a owl:DatatypeProperty ;
+    rdfs:domain :Order ;
+    rdfs:range xsd:string .
+
+# Product properties
+:productId a owl:DatatypeProperty ;
+    rdfs:domain :Product ;
+    rdfs:range xsd:string .
+
+:productName a owl:DatatypeProperty ;
+    rdfs:domain :Product ;
+    rdfs:range xsd:string .
+
+:price a owl:DatatypeProperty ;
+    rdfs:domain :Product ;
+    rdfs:range xsd:decimal .
+
+:stockLevel a owl:DatatypeProperty ;
+    rdfs:domain :Product ;
+    rdfs:range xsd:int .
+
+# Relationships
+:hasOrder a owl:ObjectProperty ;
+    rdfs:label "hasOrder" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Order .
+
+:orderedBy a owl:ObjectProperty ;
+    rdfs:label "orderedBy" ;
+    rdfs:domain :Order ;
+    rdfs:range :Customer ;
+    owl:inverseOf :hasOrder .
+
+:contains a owl:ObjectProperty ;
+    rdfs:label "contains" ;
+    rdfs:domain :Order ;
+    rdfs:range :Product .
+```
+
+## Auto-Generation from Data
+
+Mimir can automatically generate ontologies by analyzing stored data.
+
+```bash
+curl -X POST http://localhost:8080/api/ontologies/extract \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-1234",
+    "storage_ids": ["storage-uuid-1", "storage-uuid-2"],
+    "ontology_name": "extracted-ontology",
+    "include_structured": true,
+    "include_unstructured": false
+  }'
+```
+
+**Extraction process:**
+
+1. Retrieve CIR data from specified storage backends
+2. Analyze schema and detect entity types
+3. Infer relationships from shared key fields
+4. Generate Turtle ontology with classes and properties
+5. Create ontology with `is_generated: true`
+
+```go pkg/ontology/service.go:209
+func (s *Service) GenerateFromExtraction(projectID, name string, extractionResult *models.ExtractionResult) (*models.Ontology, error) {
+    turtleContent := generateTurtleFromExtraction(extractionResult)
+    
+    // Set to "active" if no other active ontology exists
+    initialStatus := "draft"
+    existingOntologies, err := s.store.ListOntologiesByProject(projectID)
+    if err == nil {
+        hasActive := false
+        for _, o := range existingOntologies {
+            if o.Status == "active" {
+                hasActive = true
+                break
+            }
+        }
+        if !hasActive {
+            initialStatus = "active"
+        }
+    }
+    
+    req := &models.OntologyCreateRequest{
+        ProjectID:   projectID,
+        Name:        name,
+        Description: fmt.Sprintf("Auto-generated from %d entities", len(extractionResult.Entities)),
+        Version:     "1.0",
+        Content:     turtleContent,
+        Status:      initialStatus,
+        IsGenerated: true,
+    }
+    
+    return s.CreateOntology(req)
+}
+```
+
+## Ontology Diffing
+
+Compare two ontologies to detect changes:
+
+```bash
+curl -X POST http://localhost:8080/api/ontologies/ont-uuid-7890/diff \
+  -H "Content-Type: application/json" \
+  -d '{
+    "new_content": "@prefix : <http://example.org/customer#> ...\n:NewClass a owl:Class ."
+  }'
+```
+
+**Response:**
+```json
+{
+  "added_classes": ["NewClass"],
+  "removed_classes": [],
+  "added_properties": ["newProperty"],
+  "removed_properties": ["oldProperty"],
+  "has_changes": true
+}
+```
+
+When significant changes are detected, the ontology can be flagged for review:
+
+```go pkg/ontology/service.go:125
+func (s *Service) DiffOntologies(oldContent, newContent string) OntologyDiff {
+    oldClasses, oldProps := parseTurtleDeclarations(oldContent)
+    newClasses, newProps := parseTurtleDeclarations(newContent)
+    
+    diff := OntologyDiff{
+        AddedClasses:      setDiff(newClasses, oldClasses),
+        RemovedClasses:    setDiff(oldClasses, newClasses),
+        AddedProperties:   setDiff(newProps, oldProps),
+        RemovedProperties: setDiff(oldProps, newProps),
+    }
+    diff.HasChanges = len(diff.AddedClasses) > 0 || len(diff.RemovedClasses) > 0 ||
+        len(diff.AddedProperties) > 0 || len(diff.RemovedProperties) > 0
+    return diff
+}
+```
+
+## Ontology Status
+
+<CardGroup cols={2}>
+  <Card title="draft" icon="pen">
+    Ontology is being edited. Not yet used by models or twins.
+  </Card>
+  <Card title="active" icon="circle-check">
+    Ontology is in use. Changes should be reviewed carefully.
+  </Card>
+  <Card title="archived" icon="box-archive">
+    Ontology is no longer in use. Read-only.
+  </Card>
+  <Card title="needs_review" icon="flag">
+    Auto-generated ontology differs from the active one and requires human review before activation.
+  </Card>
+</CardGroup>
+
+## Updating an Ontology
+
+```bash
+curl -X PATCH http://localhost:8080/api/ontologies/ont-uuid-7890 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "@prefix : <http://example.org/customer#> ...\n:UpdatedClass a owl:Class .",
+    "version": "1.1",
+    "status": "active"
+  }'
+```
+
+<Warning>
+Changing an active ontology may break existing ML models or digital twins that depend on it. Consider creating a new ontology version instead.
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Naming Conventions" icon="tag">
+    - **Classes**: PascalCase (e.g., `Customer`, `OrderItem`)
+    - **Properties**: camelCase (e.g., `customerId`, `totalAmount`)
+    - Use descriptive names that reflect the domain
+  </Accordion>
+
+  <Accordion title="Documentation" icon="book">
+    Add labels and comments to all classes and properties:
+
+    ```turtle
+    :Customer a owl:Class ;
+        rdfs:label "Customer" ;
+        rdfs:comment "Represents a customer in the e-commerce system. Customers can place orders and have associated contact information." .
+    ```
+  </Accordion>
+
+  <Accordion title="Versioning" icon="code-branch">
+    Increment the version when making changes:
+    - **Minor** (1.1): Add new classes or properties
+    - **Major** (2.0): Remove or rename classes/properties
+
+    Keep old versions archived for reference.
+  </Accordion>
+
+  <Accordion title="Domain Specification" icon="globe">
+    Always specify `rdfs:domain` and `rdfs:range` for properties:
+
+    ```turtle
+    :email a owl:DatatypeProperty ;
+        rdfs:domain :Customer ;
+        rdfs:range xsd:string .
+    ```
+
+    This enables proper schema generation and validation.
+  </Accordion>
+
+  <Accordion title="Inverse Relationships" icon="arrows-left-right">
+    Define inverse properties for bidirectional relationships:
+
+    ```turtle
+    :hasOrder a owl:ObjectProperty ;
+        rdfs:domain :Customer ;
+        rdfs:range :Order .
+    
+    :orderedBy a owl:ObjectProperty ;
+        rdfs:domain :Order ;
+        rdfs:range :Customer ;
+        owl:inverseOf :hasOrder .
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Integration with Other Features
+
+<Tabs>
+  <Tab title="Storage">
+    Ontologies structure storage schemas. When creating a storage config:
+
+    ```bash
+    curl -X POST http://localhost:8080/api/storage/configs \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "plugin_type": "postgres",
+        "ontology_id": "ont-uuid-7890",
+        "config": {...}
+      }'
+    ```
+
+    The storage plugin uses the ontology to:
+    - Create tables for each class
+    - Define columns for each property
+    - Set up foreign keys for relationships
+  </Tab>
+
+  <Tab title="ML Models">
+    Ontologies define ML model features:
+
+    ```bash
+    curl -X POST http://localhost:8080/api/ml-models \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "ontology_id": "ont-uuid-7890",
+        "name": "customer-churn-model",
+        "type": "random_forest"
+      }'
+    ```
+
+    The training process:
+    - Extracts feature names from datatype properties
+    - Uses domain/range to infer feature types
+    - Builds training dataset from ontology-structured data
+  </Tab>
+
+  <Tab title="Digital Twins">
+    Ontologies define entity types in digital twins:
+
+    ```bash
+    curl -X POST http://localhost:8080/api/digital-twins \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "ontology_id": "ont-uuid-7890",
+        "name": "customer-twin"
+      }'
+    ```
+
+    The digital twin:
+    - Creates entities for each class instance
+    - Populates attributes from datatype properties
+    - Establishes relationships from object properties
+    - Validates entity structure against ontology
+  </Tab>
+</Tabs>
+
+## Deleting an Ontology
+
+```bash
+curl -X DELETE http://localhost:8080/api/ontologies/ont-uuid-7890
+```
+
+<Warning>
+Cannot delete an ontology if it's referenced by:
+- Active ML models
+- Active digital twins
+- Storage configs
+
+Archive those resources first or update them to use a different ontology.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="ML Models" icon="brain" href="/features/ml-models">
+    Train models using ontology-defined features.
+  </Card>
+  <Card title="Digital Twins" icon="clone" href="/features/digital-twins">
+    Create entity graphs from ontologies.
+  </Card>
+  <Card title="Storage" icon="database" href="/features/storage">
+    Structure storage schemas with ontologies.
+  </Card>
+</CardGroup>

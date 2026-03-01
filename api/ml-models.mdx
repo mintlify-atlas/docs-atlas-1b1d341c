@@ -1,0 +1,380 @@
+---
+title: 'ML Models API'
+description: 'Create, train, and manage machine learning models'
+---
+
+## List ML Models
+
+Returns all ML models for a project.
+
+```bash
+curl -X GET "http://localhost:8080/api/ml-models?project_id=proj-123"
+```
+
+### Query Parameters
+
+<ParamField query="project_id" type="string" required>
+  Filter by project ID
+</ParamField>
+
+### Response
+
+<ResponseField name="models" type="array">
+  Array of ML model objects
+  <Expandable title="MLModel Object">
+    <ResponseField name="id" type="string">Model ID</ResponseField>
+    <ResponseField name="project_id" type="string">Associated project ID</ResponseField>
+    <ResponseField name="ontology_id" type="string">Associated ontology ID</ResponseField>
+    <ResponseField name="name" type="string">Model name</ResponseField>
+    <ResponseField name="description" type="string">Model description</ResponseField>
+    <ResponseField name="type" type="string">Model type: `decision_tree`, `random_forest`, `regression`, or `neural_network`</ResponseField>
+    <ResponseField name="status" type="string">Status: `draft`, `training`, `trained`, `failed`, `degraded`, `deprecated`, or `archived`</ResponseField>
+    <ResponseField name="version" type="string">Model version</ResponseField>
+    <ResponseField name="is_recommended" type="boolean">Whether this was the recommended type</ResponseField>
+    <ResponseField name="recommendation_score" type="number">Score from recommendation engine</ResponseField>
+    <ResponseField name="model_artifact_path" type="string">Path to trained model file</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="trained_at" type="string">ISO 8601 timestamp</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create ML Model
+
+Creates a new ML model record (training must be triggered separately).
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "ontology_id": "onto-456",
+    "name": "Temperature Predictor",
+    "description": "Predicts temperature based on sensor data",
+    "type": "neural_network",
+    "training_config": {
+      "train_test_split": 0.8,
+      "random_seed": 42,
+      "learning_rate": 0.001,
+      "batch_size": 32
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID to associate with
+</ParamField>
+
+<ParamField body="ontology_id" type="string" required>
+  Ontology ID defining the data schema
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Model name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Model description
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Model type: `decision_tree`, `random_forest`, `regression`, or `neural_network`
+</ParamField>
+
+<ParamField body="training_config" type="object" optional>
+  Training configuration
+  <Expandable title="TrainingConfig">
+    <ParamField body="train_test_split" type="number">Split ratio (e.g., 0.8 for 80% train, 20% test)</ParamField>
+    <ParamField body="random_seed" type="number">Random seed for reproducibility</ParamField>
+    <ParamField body="max_iterations" type="number">Maximum training iterations</ParamField>
+    <ParamField body="learning_rate" type="number">Learning rate</ParamField>
+    <ParamField body="batch_size" type="number">Batch size</ParamField>
+    <ParamField body="early_stopping_rounds" type="number">Early stopping rounds</ParamField>
+    <ParamField body="hyperparameters" type="object">Additional hyperparameters</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="metadata" type="object" optional>
+  Additional metadata (key-value pairs)
+</ParamField>
+
+### Response
+
+Returns the created ML model object with status `draft`.
+
+---
+
+## Get ML Model
+
+Returns a single ML model by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/ml-models/model-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Model ID
+</ParamField>
+
+### Response
+
+Returns the ML model object (see List ML Models for schema).
+
+---
+
+## Update ML Model
+
+Updates an ML model's metadata or status.
+
+```bash
+curl -X PUT http://localhost:8080/api/ml-models/model-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated model description",
+    "status": "archived"
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Model ID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="name" type="string" optional>
+  New name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  New description
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  New status: `draft`, `training`, `trained`, `failed`, `degraded`, `deprecated`, or `archived`
+</ParamField>
+
+<ParamField body="training_metrics" type="object" optional>
+  Updated training metrics
+</ParamField>
+
+<ParamField body="performance_metrics" type="object" optional>
+  Updated performance metrics
+</ParamField>
+
+<ParamField body="metadata" type="object" optional>
+  Updated metadata
+</ParamField>
+
+### Response
+
+Returns the updated ML model object.
+
+---
+
+## Delete ML Model
+
+Deletes an ML model.
+
+```bash
+curl -X DELETE http://localhost:8080/api/ml-models/model-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Model ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## Trigger Model Training
+
+Enqueues a Kubernetes training job for the specified model. Returns `202 Accepted` immediately; poll the model's status field or listen on the WebSocket for completion.
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/train \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "model-123",
+    "storage_ids": ["storage-456", "storage-789"],
+    "training_config": {
+      "train_test_split": 0.8,
+      "random_seed": 42
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="model_id" type="string" required>
+  Model ID to train
+</ParamField>
+
+<ParamField body="storage_ids" type="array" optional>
+  Storage config IDs to use for training data. If empty, worker generates synthetic data for demo purposes.
+</ParamField>
+
+<ParamField body="training_config" type="object" optional>
+  Training configuration (overrides model's default config)
+</ParamField>
+
+### Response
+
+Returns the ML model object with status updated to `training` and HTTP status `202 Accepted`.
+
+---
+
+## Recommend Model Type
+
+Analyses the project's ontology and returns a suggested model type (e.g., decision_tree, neural_network) along with a confidence score.
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/recommend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "ontology_id": "onto-456"
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="ontology_id" type="string" required>
+  Ontology ID to analyze
+</ParamField>
+
+### Response
+
+<ResponseField name="recommended_type" type="string">Recommended model type</ResponseField>
+<ResponseField name="score" type="number">Confidence score (0-100)</ResponseField>
+<ResponseField name="reasoning" type="string">Human-readable explanation</ResponseField>
+<ResponseField name="all_scores" type="object">Scores for all model types</ResponseField>
+<ResponseField name="ontology_analysis" type="object">
+  Analysis of the ontology
+  <Expandable title="OntologyAnalysis">
+    <ResponseField name="num_entities" type="number">Number of entities</ResponseField>
+    <ResponseField name="num_attributes" type="number">Number of attributes</ResponseField>
+    <ResponseField name="num_relationships" type="number">Number of relationships</ResponseField>
+    <ResponseField name="numerical_ratio" type="number">Ratio of numerical attributes</ResponseField>
+    <ResponseField name="categorical_ratio" type="number">Ratio of categorical attributes</ResponseField>
+    <ResponseField name="complexity" type="string">Complexity level: `low`, `medium`, or `high`</ResponseField>
+  </Expandable>
+</ResponseField>
+<ResponseField name="data_analysis" type="object">
+  Analysis of ingested data
+  <Expandable title="DataAnalysis">
+    <ResponseField name="size" type="string">Data size: `small`, `medium`, or `large`</ResponseField>
+    <ResponseField name="record_count" type="number">Number of records</ResponseField>
+    <ResponseField name="has_unstructured" type="boolean">Whether unstructured data is present</ResponseField>
+    <ResponseField name="feature_count" type="number">Number of features</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Worker Callbacks
+
+These endpoints are called by Kubernetes training jobs to report completion or failure.
+
+### Report Training Complete
+
+Called by the worker job to record the trained artifact path and performance metrics.
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/model-123/training/complete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_artifact_path": "s3://models/model-123/v1.pkl",
+    "performance_metrics": {
+      "accuracy": 0.95,
+      "f1_score": 0.93,
+      "precision": 0.94,
+      "recall": 0.92
+    },
+    "training_metrics": {
+      "epoch": 50,
+      "training_loss": 0.05,
+      "validation_loss": 0.08
+    }
+  }'
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Model ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="model_artifact_path" type="string" required>
+  Path to the trained model artifact
+</ParamField>
+
+<ParamField body="performance_metrics" type="object" optional>
+  Model performance metrics
+</ParamField>
+
+<ParamField body="training_metrics" type="object" optional>
+  Training metrics
+</ParamField>
+
+#### Response
+
+```json
+{
+  "status": "training completed"
+}
+```
+
+---
+
+### Report Training Failure
+
+Called by the worker job to record a training failure reason.
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/model-123/training/fail \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Insufficient training data"
+  }'
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Model ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="reason" type="string" required>
+  Failure reason
+</ParamField>
+
+#### Response
+
+```json
+{
+  "status": "training failed"
+}
+```

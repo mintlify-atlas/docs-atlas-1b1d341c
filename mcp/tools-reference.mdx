@@ -1,0 +1,1415 @@
+---
+title: MCP Tools Reference
+description: Complete reference for all 55 Mimir AIP MCP tools
+---
+
+This page documents every MCP tool exposed by Mimir AIP, organized by category.
+
+<Note>
+All tools return JSON responses. Long-running operations (training, pipeline execution, digital twin sync) return task IDs; use `wait_for_task` or `get_work_task` to poll for completion.
+</Note>
+
+---
+
+## Projects (8 tools)
+
+Projects are the top-level organizational unit in Mimir. Each project groups pipelines, ontologies, ML models, digital twins, and storage configurations.
+
+### list_projects
+
+List all projects in the platform.
+
+**Parameters:**
+- `status` (optional): Filter by status (`active`, `archived`, `draft`)
+
+**Example:**
+```json
+{
+  "status": "active"
+}
+```
+
+**Returns:** Array of project objects with `id`, `name`, `description`, `version`, `status`, `tags`, `created_at`, `updated_at`.
+
+---
+
+### get_project
+
+Get details of a specific project.
+
+**Parameters:**
+- `id` (required): Project ID
+
+**Example:**
+```json
+{
+  "id": "proj_abc123"
+}
+```
+
+**Returns:** Project object with full details including associated component IDs.
+
+---
+
+### create_project
+
+Create a new project.
+
+**Parameters:**
+- `name` (required): Project name (3-50 alphanumeric characters, hyphens, underscores)
+- `description` (optional): Human-readable description
+- `version` (optional): Semantic version string (e.g., `1.0.0`)
+- `tags` (optional): Comma-separated list of tags (e.g., `production,ml,iot`)
+
+**Example:**
+```json
+{
+  "name": "SmartFactory",
+  "description": "IoT data aggregation and ML for factory automation",
+  "version": "1.0.0",
+  "tags": "iot,ml,production"
+}
+```
+
+**Returns:** Created project object.
+
+---
+
+### update_project
+
+Update an existing project's metadata.
+
+**Parameters:**
+- `id` (required): Project ID
+- `description` (optional): New description
+- `version` (optional): New version (e.g., `2.0.0`)
+- `status` (optional): New status (`active`, `archived`, `draft`)
+- `tags` (optional): Comma-separated replacement tag list
+
+**Example:**
+```json
+{
+  "id": "proj_abc123",
+  "version": "1.1.0",
+  "tags": "iot,ml,production,v1.1"
+}
+```
+
+**Returns:** Updated project object.
+
+---
+
+### delete_project
+
+Delete (archive) a project.
+
+**Parameters:**
+- `id` (required): Project ID
+
+**Example:**
+```json
+{
+  "id": "proj_abc123"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### add_project_component
+
+Associate a component with a project.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `component_type` (required): One of `pipeline`, `ontology`, `ml_model`, `digital_twin`, `storage`
+- `component_id` (required): ID of the component to associate
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "component_type": "pipeline",
+  "component_id": "pipe_xyz789"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### remove_project_component
+
+Remove a component association from a project.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `component_type` (required): One of `pipeline`, `ontology`, `ml_model`, `digital_twin`, `storage`
+- `component_id` (required): ID of the component to disassociate
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "component_type": "pipeline",
+  "component_id": "pipe_xyz789"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### clone_project
+
+Clone an existing project under a new name.
+
+**Parameters:**
+- `id` (required): Source project ID
+- `new_name` (required): Name for the cloned project
+
+**Example:**
+```json
+{
+  "id": "proj_abc123",
+  "new_name": "SmartFactory-Dev"
+}
+```
+
+**Returns:** Cloned project object with a new ID.
+
+---
+
+## Pipelines (6 tools)
+
+Pipelines define ordered sequences of data processing steps (ingestion → processing → output).
+
+### list_pipelines
+
+List pipelines, optionally filtered by project.
+
+**Parameters:**
+- `project_id` (optional): Filter by project ID
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123"
+}
+```
+
+**Returns:** Array of pipeline objects.
+
+---
+
+### get_pipeline
+
+Get details of a specific pipeline.
+
+**Parameters:**
+- `id` (required): Pipeline ID
+
+**Example:**
+```json
+{
+  "id": "pipe_xyz789"
+}
+```
+
+**Returns:** Pipeline object with full step definitions.
+
+---
+
+### create_pipeline
+
+Create a new pipeline.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `name` (required): Pipeline name
+- `type` (required): One of `ingestion`, `processing`, `output`
+- `steps` (required): JSON array of pipeline steps
+- `description` (optional): Pipeline description
+
+**Step Schema:**
+```json
+{
+  "name": "step1",
+  "plugin": "default",
+  "action": "transform",
+  "parameters": {}
+}
+```
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "name": "IoT-Ingestion",
+  "type": "ingestion",
+  "steps": [
+    {
+      "name": "fetch",
+      "plugin": "http",
+      "action": "GET",
+      "parameters": {"url": "https://api.example.com/data"}
+    },
+    {
+      "name": "transform",
+      "plugin": "json",
+      "action": "parse",
+      "parameters": {}
+    }
+  ],
+  "description": "Fetch and parse IoT data from external API"
+}
+```
+
+**Returns:** Created pipeline object.
+
+---
+
+### update_pipeline
+
+Update an existing pipeline.
+
+**Parameters:**
+- `id` (required): Pipeline ID
+- `description` (optional): New description
+- `steps` (optional): Replacement JSON array of steps
+- `status` (optional): New status (`active`, `inactive`, `archived`)
+
+**Example:**
+```json
+{
+  "id": "pipe_xyz789",
+  "status": "active"
+}
+```
+
+**Returns:** Updated pipeline object.
+
+---
+
+### delete_pipeline
+
+Delete a pipeline.
+
+**Parameters:**
+- `id` (required): Pipeline ID
+
+**Example:**
+```json
+{
+  "id": "pipe_xyz789"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### execute_pipeline
+
+Enqueue a pipeline for asynchronous execution.
+
+**Parameters:**
+- `id` (required): Pipeline ID
+
+**Example:**
+```json
+{
+  "id": "pipe_xyz789"
+}
+```
+
+**Returns:**
+```json
+{
+  "task_id": "task_123",
+  "pipeline_id": "pipe_xyz789",
+  "status": "queued"
+}
+```
+
+Use `wait_for_task` or `get_work_task` to poll for completion.
+
+---
+
+## Schedules (5 tools)
+
+Schedules are cron-based triggers that enqueue pipelines on a recurring basis.
+
+### list_schedules
+
+List schedules, optionally filtered by project.
+
+**Parameters:**
+- `project_id` (optional): Filter by project ID
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123"
+}
+```
+
+**Returns:** Array of schedule objects.
+
+---
+
+### get_schedule
+
+Get details of a specific schedule.
+
+**Parameters:**
+- `id` (required): Schedule ID
+
+**Example:**
+```json
+{
+  "id": "sched_456"
+}
+```
+
+**Returns:** Schedule object with cron expression and associated pipeline IDs.
+
+---
+
+### create_schedule
+
+Create a new cron-based schedule.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `name` (required): Schedule name
+- `cron_schedule` (required): Cron expression (e.g., `"0 * * * *"` for hourly)
+- `pipeline_ids` (required): Comma-separated list of pipeline IDs to trigger
+- `enabled` (optional): Enable immediately (default `true`)
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "name": "Hourly-Ingestion",
+  "cron_schedule": "0 * * * *",
+  "pipeline_ids": "pipe_xyz789,pipe_abc456",
+  "enabled": "true"
+}
+```
+
+**Returns:** Created schedule object.
+
+---
+
+### update_schedule
+
+Update an existing schedule.
+
+**Parameters:**
+- `id` (required): Schedule ID
+- `name` (optional): New name
+- `cron_schedule` (optional): New cron expression
+- `pipeline_ids` (optional): Comma-separated replacement list of pipeline IDs
+- `enabled` (optional): Enable/disable (`true` or `false`)
+
+**Example:**
+```json
+{
+  "id": "sched_456",
+  "enabled": "false"
+}
+```
+
+**Returns:** Updated schedule object.
+
+---
+
+### delete_schedule
+
+Delete a schedule.
+
+**Parameters:**
+- `id` (required): Schedule ID
+
+**Example:**
+```json
+{
+  "id": "sched_456"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+## ML Models (7 tools)
+
+ML models are trained on data from storage backends and used for inference. Supported types: decision tree, random forest, regression, neural network.
+
+### list_ml_models
+
+List ML models for a project.
+
+**Parameters:**
+- `project_id` (required): Project ID
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123"
+}
+```
+
+**Returns:** Array of ML model objects.
+
+---
+
+### get_ml_model
+
+Get details of a specific ML model.
+
+**Parameters:**
+- `id` (required): ML model ID
+
+**Example:**
+```json
+{
+  "id": "model_789"
+}
+```
+
+**Returns:** ML model object with training config and status.
+
+---
+
+### create_ml_model
+
+Create a new ML model definition.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `ontology_id` (required): Ontology ID that defines the model's domain
+- `name` (required): Model name
+- `type` (required): One of `decision_tree`, `random_forest`, `regression`, `neural_network`
+- `description` (optional): Model description
+- `config` (optional): JSON training config
+
+**Config Schema:**
+```json
+{
+  "train_test_split": 0.8,
+  "random_seed": 42,
+  "max_depth": 10,
+  "n_estimators": 100,
+  "learning_rate": 0.01
+}
+```
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "ontology_id": "onto_xyz",
+  "name": "Anomaly-Detector",
+  "type": "random_forest",
+  "config": "{\"max_depth\":10,\"n_estimators\":100}"
+}
+```
+
+**Returns:** Created ML model object.
+
+---
+
+### update_ml_model
+
+Update an existing ML model's metadata.
+
+**Parameters:**
+- `id` (required): ML model ID
+- `name` (optional): New name
+- `description` (optional): New description
+- `status` (optional): New status (`created`, `training`, `trained`, `failed`, `deprecated`)
+
+**Example:**
+```json
+{
+  "id": "model_789",
+  "status": "deprecated"
+}
+```
+
+**Returns:** Updated ML model object.
+
+---
+
+### delete_ml_model
+
+Delete an ML model.
+
+**Parameters:**
+- `id` (required): ML model ID
+
+**Example:**
+```json
+{
+  "id": "model_789"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### train_ml_model
+
+Start asynchronous training for an ML model.
+
+**Parameters:**
+- `model_id` (required): ML model ID
+- `storage_ids` (optional): Comma-separated list of storage config IDs to use as training data
+
+**Example:**
+```json
+{
+  "model_id": "model_789",
+  "storage_ids": "storage_111,storage_222"
+}
+```
+
+**Returns:** ML model object with status updated to `training`. Training runs asynchronously as a worker job.
+
+---
+
+### run_inference
+
+Enqueue an ML inference job.
+
+**Parameters:**
+- `model_id` (required): Trained ML model ID
+- `storage_id` (required): Storage config ID containing data to run inference on
+
+**Example:**
+```json
+{
+  "model_id": "model_789",
+  "storage_id": "storage_111"
+}
+```
+
+**Returns:**
+```json
+{
+  "task_id": "task_456",
+  "model_id": "model_789",
+  "storage_id": "storage_111",
+  "status": "queued"
+}
+```
+
+Use `wait_for_task` or `get_work_task` to poll for completion.
+
+---
+
+### recommend_model
+
+Recommend the best ML model type for a project based on its ontology and data.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `ontology_id` (required): Ontology ID describing the data domain
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "ontology_id": "onto_xyz"
+}
+```
+
+**Returns:**
+```json
+{
+  "recommended_type": "random_forest",
+  "confidence": 0.85,
+  "reasoning": "Data has categorical and numerical features; random forest performs well on mixed data."
+}
+```
+
+---
+
+## Digital Twins (7 tools)
+
+Digital twins are live in-memory entity graphs initialized from an ontology and synchronized from storage. Queryable via SPARQL.
+
+### list_digital_twins
+
+List digital twins, optionally filtered by project.
+
+**Parameters:**
+- `project_id` (optional): Filter by project ID
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123"
+}
+```
+
+**Returns:** Array of digital twin objects.
+
+---
+
+### get_digital_twin
+
+Get details of a specific digital twin.
+
+**Parameters:**
+- `id` (required): Digital twin ID
+
+**Example:**
+```json
+{
+  "id": "dt_999"
+}
+```
+
+**Returns:** Digital twin object with ontology ID, status, and entity count.
+
+---
+
+### create_digital_twin
+
+Create a new digital twin.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `ontology_id` (required): Ontology ID that defines the twin's entity model
+- `name` (required): Digital twin name
+- `description` (optional): Description
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "ontology_id": "onto_xyz",
+  "name": "Factory-Twin",
+  "description": "Live digital twin of factory floor sensors and machines"
+}
+```
+
+**Returns:** Created digital twin object.
+
+---
+
+### update_digital_twin
+
+Update an existing digital twin's metadata.
+
+**Parameters:**
+- `id` (required): Digital twin ID
+- `name` (optional): New name
+- `description` (optional): New description
+- `status` (optional): New status (`active`, `inactive`, `archived`)
+
+**Example:**
+```json
+{
+  "id": "dt_999",
+  "status": "active"
+}
+```
+
+**Returns:** Updated digital twin object.
+
+---
+
+### delete_digital_twin
+
+Delete a digital twin.
+
+**Parameters:**
+- `id` (required): Digital twin ID
+
+**Example:**
+```json
+{
+  "id": "dt_999"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### sync_digital_twin
+
+Enqueue a digital twin sync job to update entities from storage.
+
+**Parameters:**
+- `id` (required): Digital twin ID
+
+**Example:**
+```json
+{
+  "id": "dt_999"
+}
+```
+
+**Returns:**
+```json
+{
+  "task_id": "task_789",
+  "digital_twin_id": "dt_999",
+  "status": "queued"
+}
+```
+
+Use `wait_for_task` or `get_work_task` to poll for completion.
+
+---
+
+### query_digital_twin
+
+Execute a SPARQL query against a digital twin's entity graph.
+
+**Parameters:**
+- `id` (required): Digital twin ID
+- `sparql_query` (required): SPARQL query string
+- `limit` (optional): Maximum number of results (default 100)
+
+**Example:**
+```json
+{
+  "id": "dt_999",
+  "sparql_query": "SELECT ?sensor ?temp WHERE { ?sensor a :Sensor ; :temperature ?temp . FILTER(?temp > 80) } LIMIT 50",
+  "limit": 50
+}
+```
+
+**Returns:**
+```json
+{
+  "results": [
+    {"sensor": "sensor_001", "temp": 85.3},
+    {"sensor": "sensor_042", "temp": 92.1}
+  ],
+  "count": 2
+}
+```
+
+---
+
+## Ontologies (6 tools)
+
+Ontologies define entity types, properties, and relationships in OWL/Turtle format.
+
+### list_ontologies
+
+List ontologies for a project.
+
+**Parameters:**
+- `project_id` (required): Project ID
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123"
+}
+```
+
+**Returns:** Array of ontology objects.
+
+---
+
+### get_ontology
+
+Get details of a specific ontology.
+
+**Parameters:**
+- `id` (required): Ontology ID
+
+**Example:**
+```json
+{
+  "id": "onto_xyz"
+}
+```
+
+**Returns:** Ontology object with full OWL/Turtle content.
+
+---
+
+### create_ontology
+
+Create a new ontology.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `name` (required): Ontology name
+- `content` (required): OWL/Turtle ontology content as a string
+- `description` (optional): Description
+- `version` (optional): Version string (default `1.0.0`)
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "name": "IoT-Ontology",
+  "content": "@prefix : <http://example.com/ont#> . :Sensor a owl:Class . :temperature a owl:DatatypeProperty .",
+  "version": "1.0.0"
+}
+```
+
+**Returns:** Created ontology object.
+
+---
+
+### update_ontology
+
+Update an existing ontology.
+
+**Parameters:**
+- `id` (required): Ontology ID
+- `name` (optional): New name
+- `description` (optional): New description
+- `version` (optional): New version (e.g., `2.0.0`)
+- `content` (optional): Replacement OWL/Turtle content
+- `status` (optional): New status (`active`, `deprecated`)
+
+**Example:**
+```json
+{
+  "id": "onto_xyz",
+  "version": "1.1.0"
+}
+```
+
+**Returns:** Updated ontology object.
+
+---
+
+### delete_ontology
+
+Delete an ontology.
+
+**Parameters:**
+- `id` (required): Ontology ID
+
+**Example:**
+```json
+{
+  "id": "onto_xyz"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### generate_ontology_from_text
+
+Generate an OWL ontology by extracting entity types and relationships from a text description.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `name` (required): Name for the generated ontology
+- `text` (required): Domain description text
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "name": "Factory-Ontology",
+  "text": "A factory has machines. Each machine has sensors that measure temperature and pressure. Sensors send readings to a central database."
+}
+```
+
+**Returns:**
+```json
+{
+  "ontology": { /* ontology object */ },
+  "extraction_summary": {
+    "entities_count": 4,
+    "relationships_count": 2
+  }
+}
+```
+
+---
+
+### extract_and_generate_ontology
+
+Extract entities from storage backends and generate an OWL ontology. Diffs against any existing active ontology and flags for review if changes are detected.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `storage_ids` (required): Comma-separated list of storage config IDs
+- `ontology_name` (required): Name for the generated ontology
+- `include_structured` (optional): Include structured data extraction (default `true`)
+- `include_unstructured` (optional): Include unstructured/text extraction (default `true`)
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "storage_ids": "storage_111,storage_222",
+  "ontology_name": "Extracted-Ontology"
+}
+```
+
+**Returns:**
+```json
+{
+  "ontology": { /* ontology object */ },
+  "extraction_summary": {
+    "entities_count": 12,
+    "relationships_count": 8
+  },
+  "ontology_diff": { /* diff object if changes detected */ }
+}
+```
+
+---
+
+### extract_from_storage
+
+Extract entities and relationships from one or more storage backends without generating an ontology.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `storage_ids` (required): Comma-separated list of storage config IDs
+- `include_structured` (optional): Include structured data extraction (default `true`)
+- `include_unstructured` (optional): Include unstructured/text extraction (default `true`)
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "storage_ids": "storage_111"
+}
+```
+
+**Returns:**
+```json
+{
+  "entities": [ /* array of extracted entities */ ],
+  "relationships": [ /* array of extracted relationships */ ],
+  "source": "storage"
+}
+```
+
+---
+
+## Storage (10 tools)
+
+Storage tools manage backend configurations and CIR (Common Internal Representation) data operations.
+
+### list_storage_configs
+
+List storage configurations for a project.
+
+**Parameters:**
+- `project_id` (required): Project ID
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123"
+}
+```
+
+**Returns:** Array of storage config objects.
+
+---
+
+### get_storage_config
+
+Get a specific storage configuration.
+
+**Parameters:**
+- `id` (required): Storage config ID
+
+**Example:**
+```json
+{
+  "id": "storage_111"
+}
+```
+
+**Returns:** Storage config object with plugin type and configuration.
+
+---
+
+### create_storage_config
+
+Create a new storage configuration.
+
+**Parameters:**
+- `project_id` (required): Project ID
+- `type` (required): Storage plugin type (`filesystem`, `postgresql`, `mysql`, `mongodb`, `s3`, `redis`, `elasticsearch`, `neo4j`)
+- `config` (required): JSON object with plugin-specific config
+
+**Config Examples:**
+
+**Filesystem:**
+```json
+{"path": "/data/project1"}
+```
+
+**PostgreSQL:**
+```json
+{"connection_string": "postgresql://user:pass@localhost:5432/dbname"}
+```
+
+**S3:**
+```json
+{"bucket": "my-bucket", "region": "us-east-1", "access_key": "...", "secret_key": "..."}
+```
+
+**Example:**
+```json
+{
+  "project_id": "proj_abc123",
+  "type": "postgresql",
+  "config": "{\"connection_string\":\"postgresql://user:pass@localhost:5432/iot\"}"
+}
+```
+
+**Returns:** Created storage config object.
+
+---
+
+### update_storage_config
+
+Update a storage configuration.
+
+**Parameters:**
+- `id` (required): Storage config ID
+- `config` (optional): JSON object with updated plugin-specific config
+- `active` (optional): Set active state (`true` or `false`)
+
+**Example:**
+```json
+{
+  "id": "storage_111",
+  "active": "false"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### delete_storage_config
+
+Delete a storage configuration.
+
+**Parameters:**
+- `id` (required): Storage config ID
+
+**Example:**
+```json
+{
+  "id": "storage_111"
+}
+```
+
+**Returns:** `{"success": true}`
+
+---
+
+### store_data
+
+Store one or more CIR (Common Internal Representation) records.
+
+**Parameters:**
+- `storage_id` (required): Storage config ID
+- `data` (required): JSON array of CIR objects
+
+**CIR Schema:**
+```json
+{
+  "version": "1.0",
+  "source": {
+    "type": "api",
+    "uri": "manual",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "format": "json"
+  },
+  "data": {
+    "entity_type": "Sensor",
+    "id": "sensor_001",
+    "temperature": 75.2
+  },
+  "metadata": {
+    "project_id": "proj_abc123"
+  }
+}
+```
+
+**Example:**
+```json
+{
+  "storage_id": "storage_111",
+  "data": "[{\"version\":\"1.0\",\"source\":{\"type\":\"api\",\"uri\":\"manual\",\"timestamp\":\"2024-01-01T00:00:00Z\",\"format\":\"json\"},\"data\":{\"key\":\"value\"},\"metadata\":{}}]"
+}
+```
+
+**Returns:**
+```json
+{
+  "stored": 1,
+  "total": 1
+}
+```
+
+---
+
+### retrieve_data
+
+Retrieve CIR records from a storage backend.
+
+**Parameters:**
+- `storage_id` (required): Storage config ID
+- `entity_type` (optional): Filter by entity type
+- `limit` (optional): Maximum number of records (default 100)
+
+**Example:**
+```json
+{
+  "storage_id": "storage_111",
+  "entity_type": "Sensor",
+  "limit": 50
+}
+```
+
+**Returns:**
+```json
+{
+  "records": [ /* array of CIR objects */ ],
+  "count": 50
+}
+```
+
+---
+
+### update_data
+
+Update CIR records matching a query.
+
+**Parameters:**
+- `storage_id` (required): Storage config ID
+- `query` (required): JSON CIRQuery to select records
+- `updates` (required): JSON CIRUpdate with fields to set
+
+**Example:**
+```json
+{
+  "storage_id": "storage_111",
+  "query": "{\"entity_type\":\"Sensor\",\"limit\":100}",
+  "updates": "{\"set_fields\":{\"status\":\"inactive\"}}"
+}
+```
+
+**Returns:**
+```json
+{
+  "updated": 12
+}
+```
+
+---
+
+### delete_data
+
+Delete CIR records matching a query.
+
+**Parameters:**
+- `storage_id` (required): Storage config ID
+- `query` (required): JSON CIRQuery to select records for deletion
+
+**Example:**
+```json
+{
+  "storage_id": "storage_111",
+  "query": "{\"entity_type\":\"Sensor\"}"
+}
+```
+
+**Returns:**
+```json
+{
+  "deleted": 25
+}
+```
+
+---
+
+### storage_health
+
+Check whether a storage backend is reachable and healthy.
+
+**Parameters:**
+- `storage_id` (required): Storage config ID
+
+**Example:**
+```json
+{
+  "storage_id": "storage_111"
+}
+```
+
+**Returns:**
+```json
+{
+  "storage_id": "storage_111",
+  "healthy": true
+}
+```
+
+Or if unhealthy:
+```json
+{
+  "storage_id": "storage_111",
+  "healthy": false,
+  "error": "connection refused"
+}
+```
+
+---
+
+## Tasks (3 tools)
+
+Work tasks represent asynchronous jobs (pipeline execution, ML training/inference, digital twin sync).
+
+### list_work_tasks
+
+List work tasks in the queue.
+
+**Parameters:**
+- `status` (optional): Filter by status (`queued`, `scheduled`, `spawned`, `executing`, `completed`, `failed`, `timeout`, `cancelled`)
+- `type` (optional): Filter by type (`pipeline_execution`, `ml_training`, `ml_inference`, `digital_twin_update`)
+
+**Example:**
+```json
+{
+  "status": "executing",
+  "type": "ml_training"
+}
+```
+
+**Returns:** Array of work task objects.
+
+---
+
+### get_work_task
+
+Get the current state of a specific work task.
+
+**Parameters:**
+- `id` (required): Work task ID
+
+**Example:**
+```json
+{
+  "id": "task_123"
+}
+```
+
+**Returns:** Work task object with status, progress, and result (if completed).
+
+---
+
+### wait_for_task
+
+Poll a work task until it reaches a terminal state (completed, failed, timeout, cancelled) or the timeout expires.
+
+**Parameters:**
+- `id` (required): Work task ID
+- `timeout_seconds` (optional): Maximum seconds to wait (default 300, max 600)
+
+**Example:**
+```json
+{
+  "id": "task_123",
+  "timeout_seconds": 600
+}
+```
+
+**Returns:**
+- If terminal state reached: Work task object with final status
+- If timeout: `{"task": {...}, "timed_out": true, "message": "task did not reach a terminal state within the timeout"}`
+
+---
+
+## System (1 tool)
+
+### health_check
+
+Check the health status of the Mimir AIP platform.
+
+**Parameters:** None
+
+**Example:**
+```json
+{}
+```
+
+**Returns:**
+```json
+{
+  "status": "healthy",
+  "platform": "Mimir AIP",
+  "version": "1.0.0"
+}
+```
+
+---
+
+## Common Patterns
+
+### Chaining Operations
+
+Many workflows require chaining multiple tool calls:
+
+```
+1. create_project → get project_id
+2. create_storage_config → get storage_id
+3. extract_and_generate_ontology → get ontology_id
+4. create_ml_model → get model_id
+5. train_ml_model → get task_id
+6. wait_for_task → wait for training completion
+```
+
+### Handling Async Operations
+
+Tools that return `task_id` are asynchronous:
+- `execute_pipeline`
+- `train_ml_model`
+- `run_inference`
+- `sync_digital_twin`
+
+Use `wait_for_task` or poll `get_work_task` to track progress:
+
+```
+1. execute_pipeline → {"task_id": "task_123"}
+2. wait_for_task({"id": "task_123", "timeout_seconds": 300})
+   → {"status": "completed", ...}
+```
+
+### Error Handling
+
+All tools return errors as:
+```json
+{
+  "error": "descriptive error message"
+}
+```
+
+Common errors:
+- `"id is required"` — Missing required parameter
+- `"project not found"` — Referenced resource doesn't exist
+- `"config must be valid JSON"` — Malformed JSON parameter
+- `"storage backend unreachable"` — External system error

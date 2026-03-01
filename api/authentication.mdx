@@ -1,0 +1,62 @@
+---
+title: 'Authentication'
+description: 'API authentication and authorization'
+---
+
+## Authentication
+
+Mimir AIP currently implements authentication for worker-facing endpoints only. Client-facing endpoints (projects, pipelines, ontologies, etc.) do not require authentication in the current version.
+
+## Worker Authentication
+
+Worker endpoints (`/api/worktasks/*`) can be protected with bearer token authentication when configured.
+
+### Configuration
+
+Set the `WORKER_AUTH_TOKEN` environment variable when starting the server:
+
+```bash
+export WORKER_AUTH_TOKEN=your-secret-token
+./mimir-aip
+```
+
+If `WORKER_AUTH_TOKEN` is not set, worker endpoints are accessible without authentication.
+
+### Using Authentication
+
+Include the token in the `Authorization` header:
+
+```bash
+curl -X GET http://localhost:8080/api/worktasks \
+  -H "Authorization: Bearer your-secret-token"
+```
+
+### Protected Endpoints
+
+The following endpoints require authentication when `WORKER_AUTH_TOKEN` is configured:
+
+- `GET /api/worktasks` - List work tasks
+- `POST /api/worktasks` - Submit work task
+- `GET /api/worktasks/{id}` - Get work task details
+- `POST /api/worktasks/{id}` - Update work task status
+
+### Unauthorized Response
+
+Requests without a valid token receive a `401 Unauthorized` response:
+
+```bash
+curl -X GET http://localhost:8080/api/worktasks
+```
+
+**Response:**
+```
+Unauthorized
+```
+
+## Future Authentication
+
+Future versions may implement:
+- API keys for client endpoints
+- OAuth 2.0 / OIDC integration
+- Role-based access control (RBAC)
+- Project-level permissions

@@ -1,0 +1,707 @@
+---
+title: 'Digital Twins API'
+description: 'Create and manage digital twins with entity graphs, scenarios, and predictions'
+---
+
+## List Digital Twins
+
+Returns all digital twins for a project.
+
+```bash
+curl -X GET "http://localhost:8080/api/digital-twins?project_id=proj-123"
+```
+
+### Query Parameters
+
+<ParamField query="project_id" type="string" required>
+  Filter by project ID
+</ParamField>
+
+### Response
+
+<ResponseField name="twins" type="array">
+  Array of digital twin objects
+  <Expandable title="DigitalTwin Object">
+    <ResponseField name="id" type="string">Digital twin ID</ResponseField>
+    <ResponseField name="project_id" type="string">Associated project ID</ResponseField>
+    <ResponseField name="ontology_id" type="string">Associated ontology ID</ResponseField>
+    <ResponseField name="name" type="string">Digital twin name</ResponseField>
+    <ResponseField name="description" type="string">Digital twin description</ResponseField>
+    <ResponseField name="status" type="string">Status: `active`, `syncing`, or `error`</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="last_sync_at" type="string">ISO 8601 timestamp</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create Digital Twin
+
+Creates a new digital twin and initialises its entity graph from the associated ontology.
+
+```bash
+curl -X POST http://localhost:8080/api/digital-twins \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "ontology_id": "onto-456",
+    "name": "Factory Floor Twin",
+    "description": "Digital twin of manufacturing floor",
+    "config": {
+      "storage_ids": ["storage-789"],
+      "cache_ttl": 300,
+      "auto_sync": true,
+      "sync_interval": 60,
+      "enable_predictions": true,
+      "indexing_strategy": "eager"
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID to associate with
+</ParamField>
+
+<ParamField body="ontology_id" type="string" required>
+  Ontology ID defining the entity schema
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Digital twin name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Digital twin description
+</ParamField>
+
+<ParamField body="config" type="object" optional>
+  Configuration options
+  <Expandable title="Config">
+    <ParamField body="storage_ids" type="array">CIR data sources to reference</ParamField>
+    <ParamField body="cache_ttl" type="number">Cache time-to-live in seconds</ParamField>
+    <ParamField body="auto_sync" type="boolean">Automatically sync with storage changes</ParamField>
+    <ParamField body="sync_interval" type="number">Sync interval in seconds</ParamField>
+    <ParamField body="enable_predictions" type="boolean">Enable ML predictions</ParamField>
+    <ParamField body="prediction_cache_ttl" type="number">Prediction cache TTL</ParamField>
+    <ParamField body="indexing_strategy" type="string">Indexing strategy: `lazy` or `eager`</ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+Returns the created digital twin object.
+
+---
+
+## Get Digital Twin
+
+Returns a single digital twin by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+### Response
+
+Returns the digital twin object (see List Digital Twins for schema).
+
+---
+
+## Update Digital Twin
+
+Updates a digital twin's configuration or status.
+
+```bash
+curl -X PUT http://localhost:8080/api/digital-twins/twin-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated description",
+    "config": {
+      "auto_sync": false
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="name" type="string" optional>
+  New name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  New description
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  New status: `active`, `syncing`, or `error`
+</ParamField>
+
+<ParamField body="config" type="object" optional>
+  Updated configuration
+</ParamField>
+
+### Response
+
+Returns the updated digital twin object.
+
+---
+
+## Delete Digital Twin
+
+Deletes a digital twin.
+
+```bash
+curl -X DELETE http://localhost:8080/api/digital-twins/twin-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## Sync Digital Twin
+
+Pulls the latest records from the twin's linked storage backends and refreshes the entity graph.
+
+```bash
+curl -X POST http://localhost:8080/api/digital-twins/twin-123/sync
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+### Response
+
+```json
+{
+  "status": "synced"
+}
+```
+
+---
+
+## Entities
+
+### List Entities
+
+Returns all entities in a digital twin.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123/entities
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+#### Response
+
+Returns an array of entity objects.
+
+---
+
+### Get Entity
+
+Returns a single entity by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123/entities/entity-456
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="entityId" type="string" required>
+  Entity ID
+</ParamField>
+
+#### Response
+
+<ResponseField name="id" type="string">Entity ID</ResponseField>
+<ResponseField name="digital_twin_id" type="string">Digital twin ID</ResponseField>
+<ResponseField name="type" type="string">Entity type from ontology</ResponseField>
+<ResponseField name="attributes" type="object">Current attribute values</ResponseField>
+<ResponseField name="source_data_id" type="string">Reference to CIR data ID</ResponseField>
+<ResponseField name="is_modified" type="boolean">True if has delta changes</ResponseField>
+<ResponseField name="modifications" type="object">Delta changes</ResponseField>
+<ResponseField name="relationships" type="array">Array of entity relationships</ResponseField>
+<ResponseField name="computed_values" type="object">Cached computed values</ResponseField>
+<ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+<ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+
+---
+
+### Update Entity
+
+Updates an entity's attributes.
+
+```bash
+curl -X PUT http://localhost:8080/api/digital-twins/twin-123/entities/entity-456 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attributes": {
+      "temperature": 25.5,
+      "status": "operational"
+    }
+  }'
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="entityId" type="string" required>
+  Entity ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="attributes" type="object" required>
+  Key-value pairs of attributes to update
+</ParamField>
+
+#### Response
+
+Returns the updated entity object.
+
+---
+
+### Get Related Entities
+
+Returns entities connected to the given entity by a typed relationship traversal.
+
+```bash
+curl -X GET "http://localhost:8080/api/digital-twins/twin-123/entities/entity-456/related?relationship=connectedTo"
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="entityId" type="string" required>
+  Entity ID
+</ParamField>
+
+#### Query Parameters
+
+<ParamField query="relationship" type="string" optional>
+  Relationship type to traverse
+</ParamField>
+
+#### Response
+
+Returns an array of related entity objects.
+
+---
+
+## Execute SPARQL Query
+
+Runs a SPARQL SELECT query against the twin's entity graph.
+
+```bash
+curl -X POST http://localhost:8080/api/digital-twins/twin-123/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "SELECT ?sensor ?temp WHERE { ?sensor a :Sensor . ?sensor :temperature ?temp . FILTER(?temp > 25) }",
+    "limit": 100
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="query" type="string" required>
+  SPARQL SELECT query
+</ParamField>
+
+<ParamField body="bindings" type="object" optional>
+  Variable bindings (key-value pairs)
+</ParamField>
+
+<ParamField body="limit" type="number" optional>
+  Maximum results to return
+</ParamField>
+
+<ParamField body="offset" type="number" optional>
+  Number of results to skip
+</ParamField>
+
+### Response
+
+<ResponseField name="columns" type="array">Column names</ResponseField>
+<ResponseField name="rows" type="array">Array of result rows (objects)</ResponseField>
+<ResponseField name="count" type="number">Number of results</ResponseField>
+<ResponseField name="metadata" type="object">Query metadata</ResponseField>
+
+---
+
+## Run Prediction
+
+Runs a single or batch inference using the twin's trained ML models. Provide a top-level `inputs` array for batch mode; omit it for single-record mode.
+
+```bash
+curl -X POST http://localhost:8080/api/digital-twins/twin-123/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_id": "model-456",
+    "entity_id": "entity-789",
+    "use_cache": true
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="model_id" type="string" required>
+  ML model ID to use
+</ParamField>
+
+<ParamField body="entity_id" type="string" optional>
+  Entity ID (auto-populates input from entity attributes)
+</ParamField>
+
+<ParamField body="entity_type" type="string" optional>
+  Entity type
+</ParamField>
+
+<ParamField body="input" type="object" optional>
+  Input features (required if entity_id not provided)
+</ParamField>
+
+<ParamField body="use_cache" type="boolean" optional>
+  Whether to use cached predictions (defaults to true)
+</ParamField>
+
+### Response
+
+<ResponseField name="id" type="string">Prediction ID</ResponseField>
+<ResponseField name="digital_twin_id" type="string">Digital twin ID</ResponseField>
+<ResponseField name="model_id" type="string">Model ID</ResponseField>
+<ResponseField name="entity_id" type="string">Entity ID</ResponseField>
+<ResponseField name="output" type="any">Prediction output</ResponseField>
+<ResponseField name="confidence" type="number">Confidence score</ResponseField>
+<ResponseField name="cached_at" type="string">ISO 8601 timestamp</ResponseField>
+<ResponseField name="expires_at" type="string">ISO 8601 timestamp</ResponseField>
+
+---
+
+## Scenarios
+
+### List Scenarios
+
+Returns all scenarios for a digital twin.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123/scenarios
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+#### Response
+
+Returns an array of scenario objects.
+
+---
+
+### Create Scenario
+
+Defines a what-if scenario by specifying entity attribute modifications. Results are computed in-memory; the live entity graph is never mutated.
+
+```bash
+curl -X POST http://localhost:8080/api/digital-twins/twin-123/scenarios \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Temperature Increase Scenario",
+    "description": "What if all sensors report 10 degrees higher?",
+    "modifications": [
+      {
+        "entity_type": "Sensor",
+        "entity_id": "sensor-001",
+        "attribute": "temperature",
+        "original_value": 22.5,
+        "new_value": 32.5,
+        "rationale": "Simulate heat wave"
+      }
+    ],
+    "run_predictions": true
+  }'
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Scenario name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Scenario description
+</ParamField>
+
+<ParamField body="base_state" type="string" optional>
+  Base state: `current` or `historical` (defaults to `current`)
+</ParamField>
+
+<ParamField body="modifications" type="array" required>
+  Array of modifications
+  <Expandable title="Modification">
+    <ParamField body="entity_type" type="string" required>Entity type</ParamField>
+    <ParamField body="entity_id" type="string" required>Entity ID</ParamField>
+    <ParamField body="attribute" type="string" required>Attribute to modify</ParamField>
+    <ParamField body="original_value" type="any">Original value</ParamField>
+    <ParamField body="new_value" type="any" required>New value</ParamField>
+    <ParamField body="rationale" type="string" optional>Explanation</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="run_predictions" type="boolean" optional>
+  Whether to run predictions immediately
+</ParamField>
+
+#### Response
+
+Returns the created scenario object with predictions if requested.
+
+---
+
+### Get Scenario
+
+Returns a single scenario by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123/scenarios/scenario-456
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="scenarioId" type="string" required>
+  Scenario ID
+</ParamField>
+
+#### Response
+
+Returns the scenario object.
+
+---
+
+### Delete Scenario
+
+Deletes a scenario.
+
+```bash
+curl -X DELETE http://localhost:8080/api/digital-twins/twin-123/scenarios/scenario-456
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="scenarioId" type="string" required>
+  Scenario ID
+</ParamField>
+
+#### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## Actions
+
+### List Actions
+
+Returns all actions for a digital twin.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123/actions
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+#### Response
+
+Returns an array of action objects.
+
+---
+
+### Create Action
+
+Registers an action that can be applied to entities within the digital twin.
+
+```bash
+curl -X POST http://localhost:8080/api/digital-twins/twin-123/actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "High Temperature Alert",
+    "description": "Trigger pipeline when temperature exceeds threshold",
+    "enabled": true,
+    "condition": {
+      "attribute": "temperature",
+      "operator": "gt",
+      "threshold": 30,
+      "entity_type": "Sensor"
+    },
+    "trigger": {
+      "pipeline_id": "pipe-alert-123",
+      "parameters": {
+        "severity": "high"
+      }
+    }
+  }'
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="name" type="string" required>
+  Action name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Action description
+</ParamField>
+
+<ParamField body="enabled" type="boolean" required>
+  Whether action is enabled
+</ParamField>
+
+<ParamField body="condition" type="object" required>
+  Trigger condition
+  <Expandable title="Condition">
+    <ParamField body="model_id" type="string" optional>ML model to check</ParamField>
+    <ParamField body="attribute" type="string" optional>Entity attribute to check</ParamField>
+    <ParamField body="operator" type="string" required>Operator: `gt`, `lt`, `eq`, `gte`, `lte`, `ne`</ParamField>
+    <ParamField body="threshold" type="any" required>Threshold value</ParamField>
+    <ParamField body="entity_type" type="string" optional>Entity type to monitor</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="trigger" type="object" required>
+  Action to execute
+  <Expandable title="Trigger">
+    <ParamField body="pipeline_id" type="string" required>Pipeline to execute</ParamField>
+    <ParamField body="parameters" type="object" optional>Pipeline parameters</ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+Returns the created action object.
+
+---
+
+### Get Action
+
+Returns a single action by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/digital-twins/twin-123/actions/action-456
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="actionId" type="string" required>
+  Action ID
+</ParamField>
+
+#### Response
+
+Returns the action object.
+
+---
+
+### Delete Action
+
+Deletes an action.
+
+```bash
+curl -X DELETE http://localhost:8080/api/digital-twins/twin-123/actions/action-456
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Digital twin ID
+</ParamField>
+
+<ParamField path="actionId" type="string" required>
+  Action ID
+</ParamField>
+
+#### Response
+
+Returns `204 No Content` on success.

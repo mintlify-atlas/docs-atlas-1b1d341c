@@ -1,0 +1,274 @@
+---
+title: 'Tasks API'
+description: 'Manage asynchronous work tasks and job queue'
+---
+
+## Overview
+
+The Tasks API manages the work task queue for asynchronous operations like pipeline execution, ML training, and digital twin updates. These endpoints require authentication when `WORKER_AUTH_TOKEN` is configured.
+
+## List Work Tasks
+
+Returns the current queue length.
+
+```bash
+curl -X GET http://localhost:8080/api/worktasks \
+  -H "Authorization: Bearer your-token"
+```
+
+### Response
+
+<ResponseField name="queue_length" type="number">
+  Current number of tasks in the queue
+</ResponseField>
+
+---
+
+## Submit Work Task
+
+Submits a new work task to the queue.
+
+```bash
+curl -X POST http://localhost:8080/api/worktasks \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "pipeline_execution",
+    "priority": 1,
+    "project_id": "proj-123",
+    "task_spec": {
+      "pipeline_id": "pipe-456",
+      "parameters": {}
+    },
+    "resource_requirements": {
+      "cpu": "1",
+      "memory": "2Gi",
+      "gpu": false
+    },
+    "data_access": {
+      "input_datasets": ["dataset-1"],
+      "output_location": "s3://output/",
+      "storage_credentials": "creds-secret"
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="type" type="string" required>
+  Task type: `pipeline_execution`, `ml_training`, `ml_inference`, or `digital_twin_update`
+</ParamField>
+
+<ParamField body="priority" type="number" optional>
+  Task priority (higher = higher priority, defaults to 1)
+</ParamField>
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="task_spec" type="object" required>
+  Task-specific parameters
+  <Expandable title="TaskSpec">
+    <ParamField body="pipeline_id" type="string" optional>Pipeline ID (for pipeline_execution)</ParamField>
+    <ParamField body="model_id" type="string" optional>Model ID (for ml_training/ml_inference)</ParamField>
+    <ParamField body="parameters" type="object">Additional parameters</ParamField>
+    <ParamField body="preferred_cluster" type="string" optional>Preferred cluster (empty = auto)</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="resource_requirements" type="object" required>
+  Resource requirements
+  <Expandable title="Resources">
+    <ParamField body="cpu" type="string">CPU request (e.g., "1", "2")</ParamField>
+    <ParamField body="memory" type="string">Memory request (e.g., "2Gi", "4Gi")</ParamField>
+    <ParamField body="gpu" type="boolean">Whether GPU is required</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="data_access" type="object" required>
+  Data access configuration
+  <Expandable title="DataAccess">
+    <ParamField body="input_datasets" type="array">Input dataset IDs</ParamField>
+    <ParamField body="output_location" type="string">Output storage location</ParamField>
+    <ParamField body="storage_credentials" type="string">Storage credentials reference</ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+<ResponseField name="worktask_id" type="string">Work task ID</ResponseField>
+<ResponseField name="type" type="string">Task type</ResponseField>
+<ResponseField name="status" type="string">Current status: `queued`, `scheduled`, `spawned`, `executing`, `completed`, `failed`, `timeout`, or `cancelled`</ResponseField>
+<ResponseField name="priority" type="number">Task priority</ResponseField>
+<ResponseField name="submitted_at" type="string">ISO 8601 timestamp</ResponseField>
+<ResponseField name="started_at" type="string">ISO 8601 timestamp (if started)</ResponseField>
+<ResponseField name="completed_at" type="string">ISO 8601 timestamp (if completed)</ResponseField>
+<ResponseField name="project_id" type="string">Project ID</ResponseField>
+<ResponseField name="task_spec" type="object">Task-specific parameters</ResponseField>
+<ResponseField name="resource_requirements" type="object">Resource requirements</ResponseField>
+<ResponseField name="data_access" type="object">Data access configuration</ResponseField>
+<ResponseField name="error_message" type="string">Error message (if failed)</ResponseField>
+<ResponseField name="kubernetes_job_name" type="string">Kubernetes job name (if spawned)</ResponseField>
+<ResponseField name="cluster_name" type="string">Cluster task was dispatched to</ResponseField>
+<ResponseField name="retry_count" type="number">Number of retry attempts</ResponseField>
+<ResponseField name="max_retries" type="number">Maximum retry attempts</ResponseField>
+<ResponseField name="retry_reason" type="string">Reason for retry</ResponseField>
+
+---
+
+## Get Work Task
+
+Returns a single work task by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/worktasks/task-123 \
+  -H "Authorization: Bearer your-token"
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Work task ID
+</ParamField>
+
+### Response
+
+Returns the work task object (see Submit Work Task for schema).
+
+---
+
+## Update Work Task Status
+
+Updates the status of a work task. Called by worker jobs to report progress.
+
+```bash
+curl -X POST http://localhost:8080/api/worktasks/task-123 \
+  -H "Authorization: Bearer your-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "worktask_id": "task-123",
+    "status": "completed",
+    "output_location": "s3://output/result.json",
+    "metadata": {
+      "records_processed": 1000
+    }
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Work task ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="worktask_id" type="string" required>
+  Work task ID (must match path parameter)
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  New status: `executing`, `completed`, `failed`, `timeout`, or `cancelled`
+</ParamField>
+
+<ParamField body="output_location" type="string" optional>
+  Output location (for completed tasks)
+</ParamField>
+
+<ParamField body="metadata" type="object" optional>
+  Additional metadata
+</ParamField>
+
+<ParamField body="error_message" type="string" optional>
+  Error message (for failed tasks)
+</ParamField>
+
+### Response
+
+```json
+{
+  "status": "updated"
+}
+```
+
+Or for retryable errors:
+
+```json
+{
+  "status": "requeued_for_retry"
+}
+```
+
+### Automatic Retry
+
+The system automatically retries tasks with transient errors (OOMKilled, Evicted, DeadlineExceeded). Tasks are requeued with incremented retry count up to the maximum retry limit.
+
+---
+
+## Get Metrics
+
+Returns queue and task metrics.
+
+```bash
+curl -X GET http://localhost:8080/api/metrics
+```
+
+### Response
+
+<ResponseField name="queue" type="object">
+  Queue metrics
+  <Expandable title="Queue">
+    <ResponseField name="length" type="number">Current queue length</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="tasks_by_status" type="object">
+  Task counts grouped by status
+  <Expandable title="Example">
+    <ResponseField name="queued" type="number">Number of queued tasks</ResponseField>
+    <ResponseField name="executing" type="number">Number of executing tasks</ResponseField>
+    <ResponseField name="completed" type="number">Number of completed tasks</ResponseField>
+    <ResponseField name="failed" type="number">Number of failed tasks</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="tasks_by_type" type="object">
+  Task counts grouped by type
+  <Expandable title="Example">
+    <ResponseField name="pipeline_execution" type="number">Number of pipeline execution tasks</ResponseField>
+    <ResponseField name="ml_training" type="number">Number of ML training tasks</ResponseField>
+    <ResponseField name="ml_inference" type="number">Number of ML inference tasks</ResponseField>
+    <ResponseField name="digital_twin_update" type="number">Number of digital twin update tasks</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="timestamp" type="string">ISO 8601 timestamp of metrics snapshot</ResponseField>
+
+---
+
+## WebSocket Updates
+
+Subscribe to real-time task updates via WebSocket:
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/ws/tasks');
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+  console.log('Task update:', message);
+};
+```
+
+### Message Format
+
+```json
+{
+  "event": "task_update",
+  "task": {
+    "worktask_id": "task-123",
+    "status": "completed",
+    "completed_at": "2024-01-15T10:35:00Z"
+  }
+}
+```

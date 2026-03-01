@@ -1,0 +1,432 @@
+---
+title: 'Storage API'
+description: 'Manage storage backends and CIR data operations'
+---
+
+## Storage Configurations
+
+### List Storage Configs
+
+Returns all storage configurations for a project.
+
+```bash
+curl -X GET "http://localhost:8080/api/storage/configs?project_id=proj-123"
+```
+
+#### Query Parameters
+
+<ParamField query="project_id" type="string" required>
+  Filter by project ID
+</ParamField>
+
+#### Response
+
+<ResponseField name="configs" type="array">
+  Array of storage config objects
+  <Expandable title="StorageConfig Object">
+    <ResponseField name="id" type="string">Storage config ID</ResponseField>
+    <ResponseField name="project_id" type="string">Associated project ID</ResponseField>
+    <ResponseField name="plugin_type" type="string">Plugin type: `filesystem`, `s3`, `neo4j`, `postgres`, etc.</ResponseField>
+    <ResponseField name="config" type="object">Plugin-specific configuration (key-value pairs)</ResponseField>
+    <ResponseField name="ontology_id" type="string">Associated ontology ID (if any)</ResponseField>
+    <ResponseField name="active" type="boolean">Whether config is active</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### Create Storage Config
+
+Creates a new storage backend configuration for a project.
+
+```bash
+curl -X POST http://localhost:8080/api/storage/configs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "plugin_type": "postgres",
+    "config": {
+      "connection_string": "postgresql://user:pass@localhost/mimir",
+      "schema": "public"
+    },
+    "ontology_id": "onto-456",
+    "active": true
+  }'
+```
+
+#### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID to associate with
+</ParamField>
+
+<ParamField body="plugin_type" type="string" required>
+  Plugin type: `filesystem`, `s3`, `neo4j`, `postgres`, or custom plugin name
+</ParamField>
+
+<ParamField body="config" type="object" required>
+  Plugin-specific configuration (varies by plugin type)
+</ParamField>
+
+<ParamField body="ontology_id" type="string" optional>
+  Ontology ID to use for schema mapping
+</ParamField>
+
+<ParamField body="active" type="boolean" optional>
+  Whether config is active (defaults to true)
+</ParamField>
+
+#### Response
+
+Returns the created storage config object.
+
+---
+
+### Get Storage Config
+
+Returns a single storage config by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/storage/configs/storage-123
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Storage config ID
+</ParamField>
+
+#### Response
+
+Returns the storage config object.
+
+---
+
+### Update Storage Config
+
+Updates a storage configuration.
+
+```bash
+curl -X PUT http://localhost:8080/api/storage/configs/storage-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "active": false
+  }'
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Storage config ID
+</ParamField>
+
+#### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="config" type="object" optional>
+  Updated configuration
+</ParamField>
+
+<ParamField body="ontology_id" type="string" optional>
+  New ontology ID
+</ParamField>
+
+<ParamField body="active" type="boolean" optional>
+  New active status
+</ParamField>
+
+#### Response
+
+Returns the updated storage config object.
+
+---
+
+### Delete Storage Config
+
+Deletes a storage configuration.
+
+```bash
+curl -X DELETE http://localhost:8080/api/storage/configs/storage-123
+```
+
+#### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Storage config ID
+</ParamField>
+
+#### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## CIR Data Operations
+
+### Store CIR Data
+
+Writes one or more CIR records to the specified storage backend.
+
+```bash
+curl -X POST http://localhost:8080/api/storage/store \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "storage_id": "storage-456",
+    "cir_data": {
+      "version": "1.0",
+      "source": {
+        "type": "api",
+        "uri": "https://api.example.com/sensors",
+        "timestamp": "2024-01-15T10:30:00Z",
+        "format": "json"
+      },
+      "data": {
+        "sensor_id": "temp-001",
+        "temperature": 22.5,
+        "humidity": 65.2
+      },
+      "metadata": {
+        "size": 1024,
+        "record_count": 1
+      }
+    }
+  }'
+```
+
+#### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="storage_id" type="string" required>
+  Storage config ID
+</ParamField>
+
+<ParamField body="cir_data" type="object" required>
+  CIR data object to store
+  <Expandable title="CIR Object">
+    <ParamField body="version" type="string" required>CIR version (currently "1.0")</ParamField>
+    <ParamField body="source" type="object" required>
+      Source metadata
+      <Expandable title="Source Object">
+        <ParamField body="type" type="string" required>Source type: `api`, `file`, `database`, or `stream`</ParamField>
+        <ParamField body="uri" type="string" required>Source URI</ParamField>
+        <ParamField body="timestamp" type="string" required>ISO 8601 timestamp</ParamField>
+        <ParamField body="format" type="string" required>Format: `csv`, `json`, `xml`, `text`, or `binary`</ParamField>
+        <ParamField body="parameters" type="object" optional>Additional source parameters</ParamField>
+      </Expandable>
+    </ParamField>
+    <ParamField body="data" type="any" required>Actual data (any valid JSON)</ParamField>
+    <ParamField body="metadata" type="object" required>
+      Data metadata
+      <Expandable title="Metadata Object">
+        <ParamField body="size" type="number" required>Data size in bytes</ParamField>
+        <ParamField body="encoding" type="string" optional>Character encoding</ParamField>
+        <ParamField body="record_count" type="number" optional>Number of records</ParamField>
+        <ParamField body="schema_inference" type="object" optional>Inferred schema</ParamField>
+        <ParamField body="quality_metrics" type="object" optional>Quality indicators</ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">Whether operation succeeded</ResponseField>
+<ResponseField name="affected_items" type="number">Number of items stored</ResponseField>
+<ResponseField name="error" type="string">Error message if failed</ResponseField>
+
+---
+
+### Retrieve CIR Data
+
+Queries and returns CIR records from the specified storage backend.
+
+```bash
+curl -X POST http://localhost:8080/api/storage/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "storage_id": "storage-456",
+    "query": {
+      "entity_type": "Sensor",
+      "filters": [
+        {
+          "attribute": "temperature",
+          "operator": "gt",
+          "value": 20
+        }
+      ],
+      "limit": 100
+    }
+  }'
+```
+
+#### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="storage_id" type="string" required>
+  Storage config ID
+</ParamField>
+
+<ParamField body="query" type="object" required>
+  Query specification
+  <Expandable title="Query Object">
+    <ParamField body="entity_type" type="string" optional>Filter by entity type</ParamField>
+    <ParamField body="filters" type="array" optional>
+      Array of filter conditions
+      <Expandable title="Filter Condition">
+        <ParamField body="attribute" type="string">Attribute name</ParamField>
+        <ParamField body="operator" type="string">Operator: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `like`</ParamField>
+        <ParamField body="value" type="any">Value to compare</ParamField>
+      </Expandable>
+    </ParamField>
+    <ParamField body="order_by" type="array" optional>
+      Sorting criteria
+      <Expandable title="Order By Clause">
+        <ParamField body="attribute" type="string">Attribute to sort by</ParamField>
+        <ParamField body="direction" type="string">Direction: `asc` or `desc`</ParamField>
+      </Expandable>
+    </ParamField>
+    <ParamField body="limit" type="number" optional>Maximum records to return</ParamField>
+    <ParamField body="offset" type="number" optional>Number of records to skip</ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+Returns an array of CIR objects matching the query.
+
+---
+
+### Update CIR Data
+
+Applies delta updates to matching CIR records in the specified storage backend.
+
+```bash
+curl -X POST http://localhost:8080/api/storage/update \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "storage_id": "storage-456",
+    "query": {
+      "filters": [
+        {
+          "attribute": "sensor_id",
+          "operator": "eq",
+          "value": "temp-001"
+        }
+      ]
+    },
+    "updates": {
+      "filters": [],
+      "updates": {
+        "calibrated": true,
+        "last_maintenance": "2024-01-15"
+      }
+    }
+  }'
+```
+
+#### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="storage_id" type="string" required>
+  Storage config ID
+</ParamField>
+
+<ParamField body="query" type="object" required>
+  Query to select records (see Retrieve CIR Data)
+</ParamField>
+
+<ParamField body="updates" type="object" required>
+  Update specification
+  <Expandable title="Update Object">
+    <ParamField body="filters" type="array">Additional filters</ParamField>
+    <ParamField body="updates" type="object">Key-value pairs of attributes to update</ParamField>
+  </Expandable>
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">Whether operation succeeded</ResponseField>
+<ResponseField name="affected_items" type="number">Number of items updated</ResponseField>
+<ResponseField name="error" type="string">Error message if failed</ResponseField>
+
+---
+
+### Delete CIR Data
+
+Deletes matching CIR records from the specified storage backend.
+
+```bash
+curl -X POST http://localhost:8080/api/storage/delete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "storage_id": "storage-456",
+    "query": {
+      "filters": [
+        {
+          "attribute": "timestamp",
+          "operator": "lt",
+          "value": "2024-01-01"
+        }
+      ]
+    }
+  }'
+```
+
+#### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="storage_id" type="string" required>
+  Storage config ID
+</ParamField>
+
+<ParamField body="query" type="object" required>
+  Query to select records to delete (see Retrieve CIR Data)
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">Whether operation succeeded</ResponseField>
+<ResponseField name="affected_items" type="number">Number of items deleted</ResponseField>
+<ResponseField name="error" type="string">Error message if failed</ResponseField>
+
+---
+
+## Storage Health
+
+### Check Storage Health
+
+Checks connectivity to the underlying backend for the given storage config ID.
+
+```bash
+curl -X GET http://localhost:8080/api/storage/storage-123/health
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Storage config ID
+</ParamField>
+
+### Response
+
+<ResponseField name="healthy" type="boolean">Whether the backend is reachable</ResponseField>
+<ResponseField name="error" type="string">Error message if unhealthy</ResponseField>

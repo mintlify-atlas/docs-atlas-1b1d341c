@@ -1,0 +1,547 @@
+---
+title: Kubernetes Deployment
+description: Deploy Mimir AIP on Kubernetes using Helm
+---
+
+Deploy Mimir AIP to Kubernetes for production workloads with full worker execution, high availability, and scalability. The Helm chart manages all resources including the orchestrator, frontend, workers, RBAC, and persistent storage.
+
+## Prerequisites
+
+- Kubernetes cluster 1.25 or later
+- `kubectl` configured to access your cluster
+- [Helm 3](https://helm.sh/docs/intro/install/) installed
+- Cluster has a default StorageClass or you can specify one
+- Minimum cluster resources: 2 CPU cores, 4GB RAM, 20GB storage
+
+## Quick Start
+
+<Steps>
+
+<Step title="Clone the repository">
+
+```bash
+git clone https://github.com/mimir-aip/mimir-aip-go
+cd mimir-aip-go
+```
+
+</Step>
+
+<Step title="Install the Helm chart">
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace
+```
+
+This installs Mimir AIP with default settings:
+- Uses images from `ghcr.io/mimir-aip`
+- Creates a 10Gi PVC for the orchestrator
+- Configures RBAC and NetworkPolicies
+- Deploys both orchestrator and frontend
+
+</Step>
+
+<Step title="Verify the deployment">
+
+Check that all pods are running:
+
+```bash
+kubectl get pods -n mimir-aip
+```
+
+Expected output:
+```
+NAME                                          READY   STATUS    RESTARTS   AGE
+mimir-aip-orchestrator-xxxxxxxxxx-xxxxx       1/1     Running   0          2m
+mimir-aip-frontend-xxxxxxxxxx-xxxxx           1/1     Running   0          2m
+```
+
+Check the orchestrator health:
+
+```bash
+kubectl port-forward -n mimir-aip svc/mimir-aip-orchestrator 8080:8080
+curl http://localhost:8080/health
+```
+
+</Step>
+
+<Step title="Access the services">
+
+**Orchestrator API** (port 8080):
+
+```bash
+kubectl port-forward -n mimir-aip svc/mimir-aip-orchestrator 8080:8080
+```
+
+**Web Frontend** (port 3000):
+
+```bash
+kubectl port-forward -n mimir-aip svc/mimir-aip-frontend 3000:80
+```
+
+Access the frontend at http://localhost:3000
+
+</Step>
+
+</Steps>
+
+## Configuration
+
+### Image Settings
+
+The chart defaults to public images from GitHub Container Registry. No authentication required.
+
+#### Pin a specific version
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set image.tag=0.1.1
+```
+
+#### Use a custom registry
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set image.registry=docker.io/your-org
+```
+
+### Storage Configuration
+
+The orchestrator requires persistent storage for the SQLite database.
+
+#### Use a specific StorageClass
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set orchestrator.persistence.storageClass=fast-ssd
+```
+
+#### Increase storage size
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set orchestrator.persistence.size=50Gi
+```
+
+### Custom Values File
+
+Create a `my-values.yaml` file to override multiple defaults:
+
+```yaml my-values.yaml
+image:
+  tag: 0.1.1
+  pullPolicy: Always
+
+orchestrator:
+  replicas: 1
+  environment: production
+  logLevel: debug
+  maxWorkers: 20
+  queueThreshold: 10
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: fast-ssd
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+frontend:
+  enabled: true
+  replicas: 1
+  serviceType: ClusterIP  # Use with Ingress
+
+rbac:
+  create: true
+
+networkPolicy:
+  enabled: true
+```
+
+Install with custom values:
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  -f my-values.yaml
+```
+
+## Worker Configuration
+
+Mimir AIP spawns Kubernetes Jobs as workers to execute pipelines, ML training, inference, and digital twin synchronization.
+
+### Worker Pool Settings
+
+Configure worker concurrency via values:
+
+```yaml
+orchestrator:
+  minWorkers: 1
+  maxWorkers: 10
+  queueThreshold: 5
+  workerNamespace: mimir-aip
+  workerServiceAccount: mimir-worker
+```
+
+| Setting | Description |
+|---------|-------------|
+| `minWorkers` | Minimum concurrent worker jobs |
+| `maxWorkers` | Maximum concurrent worker jobs |
+| `queueThreshold` | Queue depth before spawning additional workers |
+| `workerNamespace` | Kubernetes namespace for worker jobs (defaults to release namespace) |
+| `workerServiceAccount` | ServiceAccount assigned to worker pods |
+
+### Multi-Cluster Worker Dispatch
+
+Deploy workers across multiple Kubernetes clusters for scalability:
+
+```yaml
+additionalClusters:
+  - name: site-b
+    orchestratorURL: http://192.168.10.5:8080
+    maxWorkers: 50
+    namespace: mimir-aip
+    serviceAccount: mimir-worker
+    kubeconfig: |
+      apiVersion: v1
+      kind: Config
+      clusters:
+      - cluster:
+          server: https://site-b.example.com:6443
+          certificate-authority-data: LS0tLS...
+        name: site-b
+      contexts:
+      - context:
+          cluster: site-b
+          user: mimir-worker
+        name: site-b
+      current-context: site-b
+      users:
+      - name: mimir-worker
+        user:
+          token: eyJhbGc...
+```
+
+Workers overflow to remote clusters when the primary cluster reaches capacity.
+
+### Worker Authentication
+
+Enable authentication for worker callbacks to the orchestrator:
+
+```yaml
+workerAuthToken: "your-secure-token-here"
+```
+
+Workers will present this token as `Authorization: Bearer <token>` when calling `/api/worktasks/*` endpoints.
+
+## Exposing Services
+
+### Using LoadBalancer
+
+The default frontend service type is `LoadBalancer`. On cloud providers, this provisions an external IP:
+
+```bash
+kubectl get svc -n mimir-aip mimir-aip-frontend
+```
+
+### Using Ingress
+
+For more control, use `ClusterIP` with an Ingress controller:
+
+```yaml my-values.yaml
+frontend:
+  serviceType: ClusterIP
+```
+
+Create an Ingress resource:
+
+```yaml ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mimir-aip
+  namespace: mimir-aip
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - mimir.example.com
+    secretName: mimir-tls
+  rules:
+  - host: mimir.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mimir-aip-frontend
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: mimir-aip-orchestrator
+            port:
+              number: 8080
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: mimir-aip-orchestrator
+            port:
+              number: 8080
+```
+
+Apply the Ingress:
+
+```bash
+kubectl apply -f ingress.yaml
+```
+
+## Managing the Deployment
+
+### Upgrade to a new version
+
+```bash
+helm upgrade mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --set image.tag=0.2.0
+```
+
+### View release status
+
+```bash
+helm status mimir-aip -n mimir-aip
+```
+
+### View release values
+
+```bash
+helm get values mimir-aip -n mimir-aip
+```
+
+### Rollback to a previous version
+
+```bash
+# List revisions
+helm history mimir-aip -n mimir-aip
+
+# Rollback to revision 1
+helm rollback mimir-aip 1 -n mimir-aip
+```
+
+### Uninstall
+
+```bash
+helm uninstall mimir-aip --namespace mimir-aip
+```
+
+<Note>
+The PersistentVolumeClaim is retained by default. Delete it manually if needed:
+```bash
+kubectl delete pvc -n mimir-aip mimir-aip-data
+```
+</Note>
+
+## Building Custom Images
+
+If you modify the source code, build and push custom images:
+
+<Steps>
+
+<Step title="Set your registry">
+
+```bash
+export REGISTRY=ghcr.io/your-org
+```
+
+</Step>
+
+<Step title="Build all images">
+
+```bash
+make build-all REGISTRY=$REGISTRY
+```
+
+This builds:
+- `$REGISTRY/orchestrator:latest`
+- `$REGISTRY/worker:latest`
+- `$REGISTRY/frontend:latest`
+
+</Step>
+
+<Step title="Push to registry">
+
+```bash
+make push-all REGISTRY=$REGISTRY
+```
+
+</Step>
+
+<Step title="Deploy with custom images">
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set image.registry=$REGISTRY
+```
+
+</Step>
+
+</Steps>
+
+## RBAC and Security
+
+The Helm chart creates the following resources when `rbac.create: true`:
+
+- **ServiceAccount**: `mimir-orchestrator` (for the orchestrator deployment)
+- **ServiceAccount**: `mimir-worker` (for worker jobs)
+- **ClusterRole**: Grants permissions to list/create/delete jobs and pods
+- **ClusterRoleBinding**: Binds the ServiceAccounts to the ClusterRole
+
+### NetworkPolicy
+
+When `networkPolicy.enabled: true`, the chart restricts traffic:
+
+- Frontend can only communicate with the orchestrator
+- Orchestrator can only receive traffic from frontend and workers
+- Workers can only communicate with the orchestrator
+
+To disable NetworkPolicy:
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set networkPolicy.enabled=false
+```
+
+## Monitoring and Observability
+
+### View logs
+
+```bash
+# Orchestrator logs
+kubectl logs -n mimir-aip -l app.kubernetes.io/component=orchestrator -f
+
+# Frontend logs
+kubectl logs -n mimir-aip -l app.kubernetes.io/component=frontend -f
+
+# Worker logs (for a specific job)
+kubectl logs -n mimir-aip job/mimir-worker-xxxxx -f
+```
+
+### Health and readiness checks
+
+The orchestrator deployment includes health probes:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+### Resource monitoring
+
+```bash
+# CPU and memory usage
+kubectl top pods -n mimir-aip
+
+# PVC usage
+kubectl get pvc -n mimir-aip
+kubectl describe pvc -n mimir-aip mimir-aip-data
+```
+
+## Troubleshooting
+
+### Pods not starting
+
+Check events:
+
+```bash
+kubectl get events -n mimir-aip --sort-by='.lastTimestamp'
+```
+
+Common issues:
+- **ImagePullBackOff**: Registry authentication failed or image doesn't exist
+- **Pending**: Insufficient cluster resources or StorageClass issue
+- **CrashLoopBackOff**: Application error, check logs
+
+### Workers not spawning
+
+Verify RBAC permissions:
+
+```bash
+kubectl auth can-i create jobs --namespace mimir-aip --as system:serviceaccount:mimir-aip:mimir-orchestrator
+```
+
+Check orchestrator logs for errors:
+
+```bash
+kubectl logs -n mimir-aip -l app.kubernetes.io/component=orchestrator | grep -i "worker\|job\|error"
+```
+
+### PVC not binding
+
+Check StorageClass availability:
+
+```bash
+kubectl get storageclass
+```
+
+Describe the PVC:
+
+```bash
+kubectl describe pvc -n mimir-aip mimir-aip-data
+```
+
+### MCP endpoint not accessible
+
+Verify the orchestrator service:
+
+```bash
+kubectl get svc -n mimir-aip mimir-aip-orchestrator
+```
+
+Test connectivity:
+
+```bash
+kubectl port-forward -n mimir-aip svc/mimir-aip-orchestrator 8080:8080
+curl http://localhost:8080/mcp/sse
+```
+
+## Next Steps
+
+- Review the [Configuration Reference](/deployment/configuration) for all available settings
+- Configure [MCP integration](/mcp/overview) to expose tools to AI agents
+- Set up LLM provider API keys for enhanced ontology extraction
+- Explore [multi-cluster deployment](/deployment/kubernetes#multi-cluster-worker-dispatch) for scalability

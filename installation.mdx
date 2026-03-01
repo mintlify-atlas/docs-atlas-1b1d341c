@@ -1,0 +1,556 @@
+---
+title: Installation
+description: Complete installation guide for deploying Mimir AIP with Docker Compose and Kubernetes
+---
+
+## Overview
+
+Mimir AIP can be deployed in two ways:
+
+- **Docker Compose** — Ideal for local development and testing. Quick to set up but does not support worker jobs.
+- **Kubernetes with Helm** — Full production deployment with worker job execution, horizontal scaling, and multi-cluster support.
+
+This guide covers both deployment methods in detail.
+
+## Docker Compose Installation
+
+### Prerequisites
+
+<CardGroup cols={3}>
+  <Card title="Docker" icon="docker">
+    Version 20.10 or later
+  </Card>
+  <Card title="Docker Compose" icon="layer-group">
+    Version 2.0 or later
+  </Card>
+  <Card title="Git" icon="git-alt">
+    For cloning the repository
+  </Card>
+</CardGroup>
+
+### Installation Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/mimir-aip/mimir-aip-go
+    cd mimir-aip-go
+    ```
+  </Step>
+
+  <Step title="Start the Services">
+    ```bash
+    docker compose up --build
+    ```
+
+    This builds and starts:
+    - **Orchestrator** on port 8080
+    - **Frontend** on port 3000
+    - **Persistent volume** for SQLite database
+  </Step>
+
+  <Step title="Verify Installation">
+    ```bash
+    curl http://localhost:8080/health
+    ```
+
+    Expected response:
+    ```json
+    {
+      "status": "healthy",
+      "timestamp": "2026-03-01T12:34:56Z"
+    }
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  **Limitation:** Docker Compose deployment does not support worker jobs. Pipeline execution, ML training, inference, and digital twin synchronization require Kubernetes.
+</Note>
+
+### Configuration
+
+Customize `docker-compose.yaml` to adjust settings:
+
+```yaml docker-compose.yaml
+services:
+  orchestrator:
+    environment:
+      - ENVIRONMENT=production      # production or development
+      - LOG_LEVEL=info             # debug, info, warn, error
+      - PORT=8080
+      - STORAGE_DIR=/app/data
+      - MIN_WORKERS=1
+      - MAX_WORKERS=10
+      - QUEUE_THRESHOLD=5
+    ports:
+      - "8080:8080"
+    volumes:
+      - orchestrator-data:/app/data
+```
+
+<Accordion title="Environment Variables Reference">
+  | Variable | Default | Description |
+  |----------|---------|-------------|
+  | `ENVIRONMENT` | `production` | Runtime environment label |
+  | `LOG_LEVEL` | `info` | Log verbosity level |
+  | `PORT` | `8080` | Orchestrator HTTP port |
+  | `STORAGE_DIR` | `/app/data` | Directory for SQLite database and file storage |
+  | `MIN_WORKERS` | `1` | Minimum concurrent worker jobs (Kubernetes only) |
+  | `MAX_WORKERS` | `10` | Maximum concurrent worker jobs (Kubernetes only) |
+  | `QUEUE_THRESHOLD` | `5` | Queued tasks before spinning up additional workers |
+</Accordion>
+
+---
+
+## Kubernetes Installation
+
+### Prerequisites
+
+<CardGroup cols={3}>
+  <Card title="Kubernetes" icon="dharmachakra">
+    Cluster version 1.25 or later
+  </Card>
+  <Card title="kubectl" icon="terminal">
+    Configured to access your cluster
+  </Card>
+  <Card title="Helm" icon="chart-simple">
+    Helm 3.0 or later installed
+  </Card>
+</CardGroup>
+
+<Tip>
+  Verify your setup:
+  ```bash
+  kubectl version --short
+  helm version --short
+  ```
+</Tip>
+
+### Installation Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/mimir-aip/mimir-aip-go
+    cd mimir-aip-go
+    ```
+  </Step>
+
+  <Step title="Install with Helm">
+    Install Mimir AIP using the provided Helm chart:
+
+    ```bash
+    helm install mimir-aip ./helm/mimir-aip \
+      --namespace mimir-aip \
+      --create-namespace
+    ```
+
+    <Accordion title="What gets deployed?">
+      The Helm chart deploys:
+      - **Orchestrator** deployment with persistent storage
+      - **Frontend** deployment
+      - **Services** for orchestrator and frontend
+      - **RBAC** resources (ServiceAccount, ClusterRole, ClusterRoleBinding)
+      - **NetworkPolicy** resources (if enabled)
+      - **ConfigMap** for worker cluster configuration
+      - **PersistentVolumeClaim** for SQLite database (10Gi by default)
+    </Accordion>
+
+    The chart uses public images from `ghcr.io/mimir-aip` — no manual build or registry authentication required.
+  </Step>
+
+  <Step title="Verify Installation">
+    Check that all pods are running:
+
+    ```bash
+    kubectl get pods -n mimir-aip
+    ```
+
+    Expected output:
+    ```
+    NAME                                      READY   STATUS    RESTARTS   AGE
+    mimir-aip-orchestrator-7d4f8b9c5d-xk7qm   1/1     Running   0          2m
+    mimir-aip-frontend-6b8f7c9d5e-pm3n8       1/1     Running   0          2m
+    ```
+  </Step>
+
+  <Step title="Access the Services">
+    Forward ports to access the services locally:
+
+    ```bash
+    # Orchestrator API
+    kubectl port-forward -n mimir-aip svc/mimir-aip-orchestrator 8080:8080
+
+    # Web Frontend (in a separate terminal)
+    kubectl port-forward -n mimir-aip svc/mimir-aip-frontend 3000:80
+    ```
+
+    Access the services at:
+    - **Web Frontend:** http://localhost:3000
+    - **Orchestrator API:** http://localhost:8080
+    - **MCP SSE Endpoint:** http://localhost:8080/mcp/sse
+  </Step>
+</Steps>
+
+### Configuration Options
+
+#### Pin a Specific Version
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set image.tag=0.1.1
+```
+
+#### Use Custom Storage Class
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  --set orchestrator.persistence.storageClass=fast-ssd \
+  --set orchestrator.persistence.size=50Gi
+```
+
+#### Custom Values File
+
+Create a `my-values.yaml` file:
+
+```yaml my-values.yaml
+# Container image settings
+image:
+  registry: ghcr.io/mimir-aip
+  tag: "0.1.1"                    # pin to specific version
+  pullPolicy: IfNotPresent
+
+# Orchestrator configuration
+orchestrator:
+  replicas: 1
+  environment: production
+  logLevel: debug                 # enable debug logging
+  minWorkers: 2
+  maxWorkers: 20                  # increase worker capacity
+  queueThreshold: 8
+  
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+  
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: fast-ssd
+    accessMode: ReadWriteOnce
+
+# Frontend configuration
+frontend:
+  enabled: true
+  replicas: 2                     # run multiple frontend instances
+  serviceType: ClusterIP          # use with Ingress instead of LoadBalancer
+  
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+# RBAC and NetworkPolicy
+rbac:
+  create: true
+
+networkPolicy:
+  enabled: true
+
+# Worker authentication token (optional)
+workerAuthToken: "your-secure-token-here"
+```
+
+Install with your custom values:
+
+```bash
+helm install mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --create-namespace \
+  -f my-values.yaml
+```
+
+### Multi-Cluster Configuration
+
+Mimir AIP supports dispatching workers to multiple Kubernetes clusters for edge and cloud deployments.
+
+<Accordion title="Multi-Cluster Setup">
+  Add remote clusters to your values file:
+
+  ```yaml my-values.yaml
+  additionalClusters:
+    - name: site-b
+      orchestratorURL: http://192.168.10.5:8080
+      maxWorkers: 50
+      namespace: mimir-aip
+      serviceAccount: mimir-worker
+      kubeconfig: |
+        apiVersion: v1
+        kind: Config
+        clusters:
+          - name: site-b
+            cluster:
+              server: https://site-b.example.com:6443
+              certificate-authority-data: LS0tLS...
+        users:
+          - name: mimir-worker
+            user:
+              token: eyJhbGci...
+        contexts:
+          - name: site-b
+            context:
+              cluster: site-b
+              user: mimir-worker
+        current-context: site-b
+
+    - name: cloud-burst
+      orchestratorURL: http://mimir-orchestrator.default.svc.cluster.local:8080
+      maxWorkers: 100
+      namespace: mimir-aip
+      serviceAccount: mimir-worker
+      kubeconfig: |
+        apiVersion: v1
+        kind: Config
+        # ... cloud cluster configuration
+  ```
+
+  Workers will overflow to these clusters in declaration order once the primary cluster reaches capacity.
+</Accordion>
+
+### Upgrading
+
+Upgrade to a new release:
+
+```bash
+helm upgrade mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  --set image.tag=0.2.0
+```
+
+Or with a custom values file:
+
+```bash
+helm upgrade mimir-aip ./helm/mimir-aip \
+  --namespace mimir-aip \
+  -f my-values.yaml
+```
+
+### Uninstalling
+
+Uninstall Mimir AIP (PVC is retained by default):
+
+```bash
+helm uninstall mimir-aip --namespace mimir-aip
+```
+
+To also delete the namespace and PVC:
+
+```bash
+helm uninstall mimir-aip --namespace mimir-aip
+kubectl delete namespace mimir-aip
+```
+
+<Warning>
+  Deleting the namespace will remove the PersistentVolumeClaim and all stored data. This action cannot be undone.
+</Warning>
+
+---
+
+## Building Custom Images
+
+If you need to modify the source code and build custom images:
+
+### Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Go" icon="golang">
+    Version 1.21 or later
+  </Card>
+  <Card title="Docker" icon="docker">
+    For building images
+  </Card>
+</CardGroup>
+
+### Build and Push Images
+
+<Steps>
+  <Step title="Set Registry Variable">
+    ```bash
+    export REGISTRY=ghcr.io/your-org
+    ```
+  </Step>
+
+  <Step title="Build All Images">
+    ```bash
+    make build-all REGISTRY=$REGISTRY
+    ```
+
+    This builds:
+    - `${REGISTRY}/orchestrator:latest`
+    - `${REGISTRY}/worker:latest`
+    - `${REGISTRY}/frontend:latest`
+  </Step>
+
+  <Step title="Push to Registry">
+    ```bash
+    # Login to your registry
+    docker login ghcr.io
+
+    # Push images
+    make push-all REGISTRY=$REGISTRY
+    ```
+  </Step>
+
+  <Step title="Deploy with Custom Images">
+    ```bash
+    helm install mimir-aip ./helm/mimir-aip \
+      --namespace mimir-aip \
+      --create-namespace \
+      --set image.registry=$REGISTRY \
+      --set image.tag=latest
+    ```
+  </Step>
+</Steps>
+
+### Individual Image Builds
+
+<CodeGroup>
+
+```bash Orchestrator
+make build-orchestrator REGISTRY=$REGISTRY TAG=v1.0.0
+```
+
+```bash Worker
+make build-worker REGISTRY=$REGISTRY TAG=v1.0.0
+```
+
+```bash Frontend
+make build-frontend REGISTRY=$REGISTRY TAG=v1.0.0
+```
+
+</CodeGroup>
+
+### Local Development
+
+Run components locally without Docker:
+
+```bash
+# Run orchestrator (requires Go)
+make dev-orchestrator
+
+# Run frontend server (in separate terminal)
+make dev-frontend
+```
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Pod not starting" icon="exclamation-triangle">
+    Check pod logs:
+
+    ```bash
+    kubectl logs -n mimir-aip -l app=orchestrator
+    kubectl logs -n mimir-aip -l app=frontend
+    ```
+
+    Common issues:
+    - **Image pull errors**: Verify registry and image tags
+    - **PVC pending**: Check storage class and cluster storage provisioner
+    - **Crash loops**: Check environment variables and database initialization
+  </Accordion>
+
+  <Accordion title="PersistentVolumeClaim pending" icon="database">
+    Check PVC status:
+
+    ```bash
+    kubectl get pvc -n mimir-aip
+    kubectl describe pvc -n mimir-aip mimir-aip-orchestrator-data
+    ```
+
+    Solutions:
+    - Verify your cluster has a default storage class: `kubectl get storageclass`
+    - Specify a storage class explicitly: `--set orchestrator.persistence.storageClass=standard`
+    - Check storage provisioner logs
+  </Accordion>
+
+  <Accordion title="Worker jobs not spawning" icon="gears">
+    Verify RBAC permissions:
+
+    ```bash
+    kubectl get clusterrole mimir-worker -n mimir-aip
+    kubectl get clusterrolebinding mimir-worker -n mimir-aip
+    kubectl get serviceaccount mimir-worker -n mimir-aip
+    ```
+
+    Check orchestrator logs for job creation errors:
+
+    ```bash
+    kubectl logs -n mimir-aip -l app=orchestrator | grep -i "worker\|job"
+    ```
+  </Accordion>
+
+  <Accordion title="Port-forward not working" icon="network-wired">
+    Check service status:
+
+    ```bash
+    kubectl get svc -n mimir-aip
+    ```
+
+    Verify pod is running:
+
+    ```bash
+    kubectl get pods -n mimir-aip
+    ```
+
+    Try direct pod port-forward:
+
+    ```bash
+    kubectl port-forward -n mimir-aip pod/mimir-aip-orchestrator-xxx 8080:8080
+    ```
+  </Accordion>
+
+  <Accordion title="Helm upgrade failed" icon="arrow-up">
+    Roll back to previous release:
+
+    ```bash
+    helm rollback mimir-aip --namespace mimir-aip
+    ```
+
+    Check release history:
+
+    ```bash
+    helm history mimir-aip --namespace mimir-aip
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create Your First Project" icon="folder-plus" href="/projects">
+    Learn how to create and manage projects
+  </Card>
+  <Card title="Build a Pipeline" icon="code-branch" href="/features/pipelines">
+    Design data ingestion and processing pipelines
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/mcp/overview">
+    Connect AI agents to Mimir AIP
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the REST API
+  </Card>
+</CardGroup>

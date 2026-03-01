@@ -1,0 +1,415 @@
+---
+title: 'Projects'
+description: 'Organize and manage your work with projects'
+icon: 'folder'
+---
+
+## Overview
+
+Projects are the top-level organizational unit in Mimir AIP. Each project groups all related resources for a specific use case or domain, providing isolation and management for:
+
+- **Pipelines**: Data ingestion and processing workflows
+- **Ontologies**: Domain vocabulary and entity definitions
+- **ML Models**: Machine learning models for predictions
+- **Digital Twins**: Real-time entity graphs and simulations
+- **Storage Configs**: Backend connections for data persistence
+- **Schedules**: Recurring pipeline execution triggers
+
+<Info>
+Projects are fully isolated. Resources in one project cannot directly reference resources in another project.
+</Info>
+
+## Project Structure
+
+```go pkg/models/project.go:15
+type Project struct {
+    ID          string
+    Name        string
+    Description string
+    Version     string            // Semantic version (e.g., "1.0.0")
+    Status      ProjectStatus     // active, archived, draft
+    Metadata    ProjectMetadata
+    Components  ProjectComponents // Resource associations
+    Settings    ProjectSettings
+}
+
+type ProjectComponents struct {
+    Pipelines      []string
+    Ontologies     []string
+    MLModels       []string
+    DigitalTwins   []string
+    StorageConfigs []string
+}
+```
+
+## Creating a Project
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST http://localhost:8080/api/projects \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "customer-analytics",
+        "description": "Customer behavior analysis platform",
+        "version": "1.0.0",
+        "status": "active",
+        "tags": ["analytics", "customer"],
+        "settings": {
+          "timezone": "America/New_York",
+          "environment": "production"
+        }
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Response">
+    ```json
+    {
+      "id": "proj-uuid-1234",
+      "name": "customer-analytics",
+      "description": "Customer behavior analysis platform",
+      "version": "1.0.0",
+      "status": "active",
+      "metadata": {
+        "created_at": "2026-03-01T10:00:00Z",
+        "updated_at": "2026-03-01T10:00:00Z",
+        "tags": ["analytics", "customer"]
+      },
+      "components": {
+        "pipelines": [],
+        "ontologies": [],
+        "ml_models": [],
+        "digital_twins": [],
+        "storage_configs": []
+      },
+      "settings": {
+        "timezone": "America/New_York",
+        "environment": "production"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Validation Rules
+
+<AccordionGroup>
+  <Accordion title="Project Name" icon="signature">
+    - **Pattern**: `^[a-zA-Z0-9_-]{3,50}$`
+    - Must be 3-50 characters
+    - Alphanumeric, hyphens, and underscores only
+    - Must be unique across non-archived projects
+
+    ```go pkg/project/service.go:15
+    var projectNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,50}$`)
+    ```
+  </Accordion>
+
+  <Accordion title="Version" icon="code-branch">
+    - **Pattern**: `^\d+\.\d+\.\d+$`
+    - Must follow semantic versioning (e.g., "1.0.0")
+    - Defaults to "1.0.0" if not provided
+
+    ```go pkg/project/service.go:16
+    var versionRegex = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+    ```
+  </Accordion>
+
+  <Accordion title="Status" icon="circle-check">
+    Valid status values:
+    - `active` — Project is operational (default)
+    - `draft` — Project is being configured
+    - `archived` — Read-only, hidden from listings
+
+    Archived projects maintain their data but cannot be modified.
+  </Accordion>
+</AccordionGroup>
+
+## Listing Projects
+
+<CodeGroup>
+```bash All Projects
+curl http://localhost:8080/api/projects
+```
+
+```bash Filter by Status
+curl "http://localhost:8080/api/projects?status=active"
+```
+
+```bash With Pagination
+curl "http://localhost:8080/api/projects?limit=10&offset=0"
+```
+</CodeGroup>
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by project status |
+| `limit` | integer | Number of results to return |
+| `offset` | integer | Number of results to skip |
+
+## Updating a Project
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X PATCH http://localhost:8080/api/projects/proj-uuid-1234 \
+      -H "Content-Type: application/json" \
+      -d '{
+        "description": "Updated customer analytics platform",
+        "version": "1.1.0",
+        "tags": ["analytics", "customer", "ml"]
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Response">
+    ```json
+    {
+      "id": "proj-uuid-1234",
+      "name": "customer-analytics",
+      "description": "Updated customer analytics platform",
+      "version": "1.1.0",
+      "status": "active",
+      "metadata": {
+        "created_at": "2026-03-01T10:00:00Z",
+        "updated_at": "2026-03-01T14:30:00Z",
+        "tags": ["analytics", "customer", "ml"]
+      },
+      "settings": {
+        "timezone": "America/New_York",
+        "environment": "production"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Only provided fields are updated. Omitted fields remain unchanged.
+</Note>
+
+## Cloning a Project
+
+Create a copy of an existing project with a new name. The clone includes all settings and tags, but components are empty.
+
+```bash
+curl -X POST http://localhost:8080/api/projects/proj-uuid-1234/clone \
+  -H "Content-Type: application/json" \
+  -d '{"new_name": "customer-analytics-dev"}'
+```
+
+**Cloned project characteristics:**
+- New unique ID assigned
+- Description appended with " (cloned)"
+- Version reset to "1.0.0"
+- Status set to `draft`
+- All component arrays empty
+- Settings and tags copied from original
+
+```go pkg/project/service.go:214
+cloned := &models.Project{
+    ID:          uuid.New().String(),
+    Name:        newName,
+    Description: original.Description + " (cloned)",
+    Version:     "1.0.0",
+    Status:      models.ProjectStatusDraft,
+    // Components arrays are empty
+    Settings:    original.Settings,
+}
+```
+
+## Managing Components
+
+Associate resources with a project using the component management endpoints.
+
+<AccordionGroup>
+  <Accordion title="Add Pipeline" icon="plus">
+    ```bash
+    curl -X POST http://localhost:8080/api/projects/proj-uuid-1234/pipelines/pipe-uuid-5678
+    ```
+
+    Pipelines are automatically associated when created with `project_id`, but can also be manually linked.
+  </Accordion>
+
+  <Accordion title="Remove Pipeline" icon="minus">
+    ```bash
+    curl -X DELETE http://localhost:8080/api/projects/proj-uuid-1234/pipelines/pipe-uuid-5678
+    ```
+
+    Removes the association. The pipeline itself is not deleted.
+  </Accordion>
+
+  <Accordion title="Other Component Types" icon="cube">
+    The same pattern applies for:
+    - Ontologies: `/ontologies/:id`
+    - ML Models: `/ml-models/:id`
+    - Digital Twins: `/digital-twins/:id`
+    - Storage Configs: `/storage/:id`
+  </Accordion>
+</AccordionGroup>
+
+```go pkg/project/service.go:242
+func (s *Service) AddPipeline(projectID, pipelineID string) error {
+    project, err := s.store.GetProject(projectID)
+    if err != nil {
+        return err
+    }
+    
+    if slices.Contains(project.Components.Pipelines, pipelineID) {
+        return nil // Already associated
+    }
+    
+    project.Components.Pipelines = append(project.Components.Pipelines, pipelineID)
+    project.Metadata.UpdatedAt = time.Now()
+    
+    return s.store.SaveProject(project)
+}
+```
+
+## Deleting a Project
+
+Deleting a project performs a **soft delete** by marking it as archived.
+
+```bash
+curl -X DELETE http://localhost:8080/api/projects/proj-uuid-1234
+```
+
+<Warning>
+Deleting a project does not delete its associated resources (pipelines, models, etc.). Those must be deleted separately.
+</Warning>
+
+```go pkg/project/service.go:177
+func (s *Service) Delete(id string) error {
+    project, err := s.store.GetProject(id)
+    if err != nil {
+        return err
+    }
+    
+    // Soft delete - update status to archived
+    project.Status = models.ProjectStatusArchived
+    project.Metadata.UpdatedAt = time.Now()
+    
+    return s.store.SaveProject(project)
+}
+```
+
+## Project Settings
+
+<CardGroup cols={2}>
+  <Card title="Timezone" icon="clock">
+    Controls timestamp display and schedule execution. Defaults to `"UTC"`.
+
+    ```json
+    {"timezone": "America/New_York"}
+    ```
+  </Card>
+
+  <Card title="Environment" icon="server">
+    Deployment context label. Defaults to `"development"`.
+
+    ```json
+    {"environment": "production"}
+    ```
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Naming Convention" icon="tag">
+    Use descriptive, kebab-case names:
+    - `customer-analytics`
+    - `supply-chain-optimization`
+    - `iot-sensor-monitoring`
+
+    Avoid generic names like `project1` or `test`.
+  </Accordion>
+
+  <Accordion title="Version Management" icon="code-branch">
+    Increment versions when making significant changes:
+    - **Patch** (1.0.1): Bug fixes, minor updates
+    - **Minor** (1.1.0): New features, backwards compatible
+    - **Major** (2.0.0): Breaking changes
+  </Accordion>
+
+  <Accordion title="Tags" icon="tags">
+    Use tags for categorization and filtering:
+    - Domain: `analytics`, `iot`, `ml`
+    - Team: `data-team`, `ml-team`
+    - Purpose: `production`, `experiment`
+  </Accordion>
+
+  <Accordion title="Status Transitions" icon="arrows-spin">
+    Recommended workflow:
+    1. Create as `draft` while configuring
+    2. Activate when ready: `active`
+    3. Archive when no longer needed: `archived`
+
+    Never delete without archiving first.
+  </Accordion>
+</AccordionGroup>
+
+## Example: Complete Project Setup
+
+```bash
+# 1. Create project
+curl -X POST http://localhost:8080/api/projects \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "customer-analytics",
+    "description": "Customer behavior analysis",
+    "version": "1.0.0",
+    "status": "draft",
+    "tags": ["analytics", "customer"]
+  }'
+
+# 2. Create storage config
+curl -X POST http://localhost:8080/api/storage/configs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-1234",
+    "plugin_type": "postgres",
+    "config": {"connection_string": "postgres://..."}
+  }'
+
+# 3. Create ontology
+curl -X POST http://localhost:8080/api/ontologies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-1234",
+    "name": "customer-ontology",
+    "content": "@prefix : <http://example.org/customer#> ..."
+  }'
+
+# 4. Create pipeline
+curl -X POST http://localhost:8080/api/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-1234",
+    "name": "customer-import",
+    "type": "ingestion",
+    "steps": [...]
+  }'
+
+# 5. Activate project
+curl -X PATCH http://localhost:8080/api/projects/proj-uuid-1234 \
+  -H "Content-Type: application/json" \
+  -d '{"status": "active"}'
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Pipelines" icon="workflow" href="/features/pipelines">
+    Create data ingestion and processing workflows.
+  </Card>
+  <Card title="Ontologies" icon="sitemap" href="/features/ontologies">
+    Define your domain vocabulary and entity types.
+  </Card>
+  <Card title="Storage" icon="database" href="/features/storage">
+    Configure storage backends for your data.
+  </Card>
+</CardGroup>

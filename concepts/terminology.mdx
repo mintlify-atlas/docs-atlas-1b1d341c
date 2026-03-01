@@ -1,0 +1,465 @@
+---
+title: 'Terminology'
+description: 'Key terms and definitions used throughout Mimir AIP'
+icon: 'book'
+---
+
+## Core Concepts
+
+### Project
+
+<Card title="Definition" icon="folder">
+  A **Project** is the top-level organizational unit in Mimir AIP. It groups all related resources for a specific use case or domain.
+</Card>
+
+Projects contain:
+- Pipelines for data ingestion and processing
+- Ontologies defining domain structure
+- ML models for predictions and recommendations
+- Digital twins for real-time simulation
+- Storage configurations for data persistence
+
+**Example use cases:**
+- E-commerce analytics platform
+- IoT sensor monitoring system
+- Supply chain optimization
+
+```go Source code reference
+// pkg/models/project.go:15
+type Project struct {
+    ID          string
+    Name        string
+    Description string
+    Version     string
+    Status      ProjectStatus // active, archived, draft
+    Components  ProjectComponents
+    Settings    ProjectSettings
+}
+```
+
+<Tip>
+Projects are isolated from each other. Resources in one project cannot directly reference resources in another project.
+</Tip>
+
+### Pipeline
+
+<Card title="Definition" icon="workflow">
+  A **Pipeline** is a named, ordered sequence of processing steps executed asynchronously by workers.
+</Card>
+
+Pipelines consist of three types:
+- **Ingestion**: Fetch data from external sources (APIs, databases, files)
+- **Processing**: Transform, enrich, or analyze data
+- **Output**: Write results to storage backends or external systems
+
+```go Source code reference
+// pkg/models/pipeline.go:24
+type Pipeline struct {
+    ID          string
+    ProjectID   string
+    Name        string
+    Type        PipelineType // ingestion, processing, output
+    Description string
+    Steps       []PipelineStep
+    Status      PipelineStatus // active, inactive, draft
+}
+```
+
+**Pipeline Steps:**
+
+Each step in a pipeline specifies:
+- **Plugin**: The execution plugin (e.g., `http`, `postgres`, `transform`)
+- **Action**: The operation to perform (e.g., `GET`, `query`, `filter`)
+- **Parameters**: Configuration for the action
+- **Output**: Where to store results for subsequent steps
+
+<CodeGroup>
+```yaml Example: Ingestion Pipeline
+name: customer-data-import
+type: ingestion
+steps:
+  - name: fetch-customers
+    plugin: postgres
+    action: query
+    parameters:
+      query: "SELECT * FROM customers WHERE updated_at > $1"
+      connection_string: "{{env.DB_URL}}"
+    output:
+      cir: customer_data
+  
+  - name: store-cir
+    plugin: storage
+    action: store
+    parameters:
+      storage_id: "{{project.storage.primary}}"
+      data: "{{steps.fetch-customers.cir}}"
+```
+
+```yaml Example: Processing Pipeline
+name: customer-enrichment
+type: processing
+steps:
+  - name: load-data
+    plugin: storage
+    action: retrieve
+    parameters:
+      storage_id: "{{project.storage.primary}}"
+      entity_type: Customer
+    output:
+      cir: customers
+  
+  - name: calculate-ltv
+    plugin: transform
+    action: compute
+    parameters:
+      input: "{{steps.load-data.cir}}"
+      expression: "sum(orders.amount) / age_in_months"
+    output:
+      cir: enriched_customers
+```
+</CodeGroup>
+
+### Schedule
+
+<Card title="Definition" icon="clock">
+  A **Schedule** is a cron-based trigger that enqueues one or more pipelines on a recurring basis.
+</Card>
+
+Schedules enable:
+- Automated data ingestion (e.g., daily API pulls)
+- Periodic model retraining
+- Regular digital twin synchronization
+
+**Cron syntax examples:**
+- `0 0 * * *` — Daily at midnight
+- `*/15 * * * *` — Every 15 minutes
+- `0 9 * * 1-5` — Weekdays at 9 AM
+
+### Ontology
+
+<Card title="Definition" icon="sitemap">
+  An **Ontology** is an OWL/Turtle vocabulary that defines entity types, properties, and relationships for a project domain.
+</Card>
+
+Ontologies are used to:
+- Structure storage schemas across backends
+- Constrain ML model training features
+- Define digital twin entity types and relationships
+- Validate data quality and consistency
+
+```go Source code reference
+// pkg/models/ontology.go:10
+type Ontology struct {
+    ID          string
+    ProjectID   string
+    Name        string
+    Version     string
+    Content     string // Turtle (.ttl) format
+    Status      string // draft, active, archived
+    IsGenerated bool   // true if auto-generated
+}
+```
+
+<CodeGroup>
+```turtle Example: E-commerce Ontology
+@prefix : <http://example.org/ecommerce#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+:Customer a owl:Class ;
+    rdfs:label "Customer" ;
+    rdfs:comment "A customer entity" .
+
+:Order a owl:Class ;
+    rdfs:label "Order" ;
+    rdfs:comment "A customer order" .
+
+:hasOrder a owl:ObjectProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range :Order .
+
+:email a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:totalAmount a owl:DatatypeProperty ;
+    rdfs:domain :Order ;
+    rdfs:range xsd:decimal .
+```
+</CodeGroup>
+
+<Info>
+Ontologies can be created manually or auto-generated from existing data using the **ontology extraction** feature.
+</Info>
+
+### Storage Config
+
+<Card title="Definition" icon="database">
+  A **Storage Config** is a connection definition for a storage backend where CIR data is persisted.
+</Card>
+
+Supported backends:
+- **Filesystem**: Local or network-mounted directories
+- **PostgreSQL**: Relational data storage
+- **MySQL**: Relational data storage
+- **MongoDB**: Document-oriented storage
+- **S3**: Object storage (AWS, MinIO, compatible)
+- **Redis**: In-memory key-value store
+- **Elasticsearch**: Search and analytics engine
+- **Neo4j**: Graph database
+
+```go Source code reference
+// pkg/models/storage.go:133
+type StorageConfig struct {
+    ID         string
+    ProjectID  string
+    PluginType string // filesystem, postgres, neo4j, etc.
+    Config     map[string]interface{}
+    OntologyID string // optional: link to ontology
+    Active     bool
+}
+```
+
+All storage operations use the **CIR** (Common Internal Representation) format for consistency across backends.
+
+### CIR (Common Internal Representation)
+
+<Card title="Definition" icon="file-code">
+  **CIR** is the normalized record format used across all storage backends in Mimir AIP.
+</Card>
+
+Every CIR object contains:
+- **Source block**: Provenance information (type, URI, timestamp, format)
+- **Data block**: The actual payload (JSON, CSV, text, binary)
+- **Metadata block**: Size, encoding, quality metrics, schema inference
+
+```go Source code reference
+// pkg/models/cir.go:35
+type CIR struct {
+    Version  string      // e.g., "1.0"
+    Source   CIRSource   // provenance
+    Data     interface{} // payload
+    Metadata CIRMetadata // metrics and schema
+}
+```
+
+See [CIR Format](/concepts/cir-format) for detailed documentation.
+
+### ML Model
+
+<Card title="Definition" icon="brain">
+  An **ML Model** is a machine learning model definition linked to an ontology, trained and executed by workers.
+</Card>
+
+**Supported model types:**
+- **Decision Tree**: Fast, interpretable classification
+- **Random Forest**: Ensemble method for robust predictions
+- **Regression**: Linear or polynomial regression
+- **Neural Network**: Deep learning models
+
+```go Source code reference
+// pkg/models/mlmodel.go:32
+type MLModel struct {
+    ID                  string
+    ProjectID           string
+    OntologyID          string // defines features and target
+    Name                string
+    Type                ModelType
+    Status              ModelStatus // draft, training, trained, failed
+    TrainingConfig      *TrainingConfig
+    TrainingMetrics     *TrainingMetrics
+    PerformanceMetrics  *PerformanceMetrics
+    ModelArtifactPath   string // path to .pkl or .h5 file
+}
+```
+
+**Model lifecycle:**
+
+1. **Create**: Define model type and link to ontology
+2. **Train**: Worker fetches CIR data and trains model
+3. **Validate**: Performance metrics calculated on test set
+4. **Infer**: Run predictions against new data
+5. **Monitor**: Track degradation over time
+
+<Tip>
+Use the **model recommendation** API to automatically suggest the best model type based on ontology and data characteristics.
+</Tip>
+
+### Digital Twin
+
+<Card title="Definition" icon="clone">
+  A **Digital Twin** is a live in-memory graph of entities and relationships, initialized from an ontology and synchronized from storage.
+</Card>
+
+Digital twins enable:
+- Real-time queries via SPARQL
+- What-if scenario modeling
+- ML-powered predictions on entities
+- Automated actions based on conditions
+
+```go Source code reference
+// pkg/models/digitaltwin.go:10
+type DigitalTwin struct {
+    ID          string
+    ProjectID   string
+    OntologyID  string // blueprint
+    Name        string
+    Status      string // active, syncing, error
+    Config      *DigitalTwinConfig
+    LastSyncAt  *time.Time
+}
+```
+
+**Key features:**
+
+<AccordionGroup>
+  <Accordion title="Entity Management" icon="cube">
+    Digital twins store **entities** (instances of ontology classes) with attributes and relationships.
+
+    ```go
+    // pkg/models/digitaltwin.go:38
+    type Entity struct {
+        ID             string
+        DigitalTwinID  string
+        Type           string // from ontology
+        Attributes     map[string]interface{}
+        Relationships  []*EntityRelationship
+        IsModified     bool   // has delta changes
+        Modifications  map[string]interface{}
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="SPARQL Queries" icon="magnifying-glass">
+    Query digital twin data using standard SPARQL syntax:
+
+    ```sparql
+    SELECT ?customer ?email ?orderCount
+    WHERE {
+      ?customer a :Customer ;
+                :email ?email ;
+                :hasOrder ?order .
+    }
+    GROUP BY ?customer ?email
+    HAVING (COUNT(?order) > 5)
+    ```
+  </Accordion>
+
+  <Accordion title="What-If Scenarios" icon="flask">
+    Create hypothetical scenarios with modifications to test predictions:
+
+    ```json
+    {
+      "name": "Price Increase Impact",
+      "modifications": [
+        {
+          "entity_type": "Product",
+          "entity_id": "prod-123",
+          "attribute": "price",
+          "new_value": 29.99
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Automated Actions" icon="bolt">
+    Trigger pipelines when conditions are met:
+
+    ```json
+    {
+      "name": "Low Stock Alert",
+      "condition": {
+        "attribute": "stock_level",
+        "operator": "lt",
+        "threshold": 10
+      },
+      "trigger": {
+        "pipeline_id": "restock-notification"
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### MCP (Model Context Protocol)
+
+<Card title="Definition" icon="plug">
+  **MCP** is an open standard for exposing tools to AI agents. Mimir exposes 55 MCP tools covering all platform resources.
+</Card>
+
+Mimir's MCP server enables:
+- Natural language interaction with the platform
+- Agent-driven pipeline creation and execution
+- Automated model training and deployment
+- Dynamic digital twin queries and scenarios
+
+**Tool categories:**
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Projects | 8 | Create, update, delete, clone |
+| Pipelines | 6 | Create, execute, get status |
+| Schedules | 5 | Create, update, list |
+| ML Models | 7 | Train, infer, recommend type |
+| Digital Twins | 7 | Sync, query, create scenario |
+| Ontologies | 6 | Create, generate, extract |
+| Storage | 8 | Store, retrieve, update, delete |
+| Tasks | 3 | List, get, cancel |
+| System | 1 | Health check |
+
+<Tip>
+Connect to Mimir's MCP endpoint at `/mcp/sse` from any MCP-compatible client (Claude Code, etc.).
+</Tip>
+
+## Status Values
+
+### Project Status
+
+- `active` — Project is operational
+- `archived` — Project is read-only, hidden from listings
+- `draft` — Project is being configured
+
+### Pipeline Status
+
+- `active` — Pipeline can be executed
+- `inactive` — Pipeline is disabled
+- `draft` — Pipeline is being configured
+
+### Model Status
+
+- `draft` — Model created but not trained
+- `training` — Training job in progress
+- `trained` — Training completed successfully
+- `failed` — Training failed
+- `degraded` — Performance below threshold
+- `deprecated` — Manually marked as obsolete
+- `archived` — Removed from active use
+
+### Ontology Status
+
+- `draft` — Ontology is being edited
+- `active` — Ontology is in use by models/twins
+- `archived` — Ontology is no longer in use
+
+### Digital Twin Status
+
+- `active` — Digital twin is operational
+- `syncing` — Synchronization job in progress
+- `error` — Sync failed or twin is inconsistent
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand how components interact in the system.
+  </Card>
+  <Card title="Data Model" icon="database" href="/concepts/data-model">
+    Learn about core data structures and relationships.
+  </Card>
+  <Card title="CIR Format" icon="file-code" href="/concepts/cir-format">
+    Deep dive into the Common Internal Representation.
+  </Card>
+</CardGroup>

@@ -1,0 +1,100 @@
+---
+title: 'API Overview'
+description: 'Introduction to Mimir AIP REST API'
+---
+
+## Base URL
+
+The Mimir AIP API is served on port 8080 by default:
+
+```
+http://localhost:8080
+```
+
+## Response Format
+
+All API responses use JSON format. Successful responses include the requested resource or an array of resources. Error responses include an error message in the response body.
+
+### Success Response
+
+```json
+{
+  "id": "proj-123",
+  "name": "My Project",
+  "status": "active"
+}
+```
+
+### Error Response
+
+```json
+Invalid request body: missing required field 'name'
+```
+
+HTTP status codes indicate the result:
+- `200 OK` - Request succeeded
+- `201 Created` - Resource created successfully
+- `202 Accepted` - Request accepted for async processing
+- `204 No Content` - Request succeeded with no response body
+- `400 Bad Request` - Invalid request parameters or body
+- `401 Unauthorized` - Missing or invalid authentication
+- `404 Not Found` - Resource not found
+- `405 Method Not Allowed` - HTTP method not supported
+- `500 Internal Server Error` - Server error
+- `503 Service Unavailable` - Service temporarily unavailable
+
+## Health Endpoints
+
+### Health Check
+
+```bash
+curl http://localhost:8080/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy"
+}
+```
+
+### Readiness Check
+
+```bash
+curl http://localhost:8080/ready
+```
+
+**Response:**
+```json
+{
+  "status": "ready"
+}
+```
+
+## OpenAPI Specification
+
+The API automatically generates an OpenAPI specification available at:
+
+```bash
+curl http://localhost:8080/openapi.yaml
+```
+
+## WebSocket Support
+
+Real-time task updates are available via WebSocket:
+
+```
+ws://localhost:8080/ws/tasks
+```
+
+The WebSocket broadcasts task status changes as JSON messages:
+
+```json
+{
+  "event": "task_update",
+  "task": {
+    "worktask_id": "task-123",
+    "status": "completed"
+  }
+}
+```

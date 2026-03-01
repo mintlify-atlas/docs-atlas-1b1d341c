@@ -1,0 +1,287 @@
+---
+title: 'Projects API'
+description: 'Manage projects and their components'
+---
+
+## List Projects
+
+Returns all projects, optionally filtered by status.
+
+```bash
+curl -X GET http://localhost:8080/api/projects
+```
+
+### Query Parameters
+
+<ParamField query="status" type="string" optional>
+  Filter by project status: `active`, `archived`, or `draft`
+</ParamField>
+
+### Response
+
+<ResponseField name="projects" type="array">
+  Array of project objects
+  <Expandable title="Project Object">
+    <ResponseField name="id" type="string">Project ID</ResponseField>
+    <ResponseField name="name" type="string">Project name</ResponseField>
+    <ResponseField name="description" type="string">Project description</ResponseField>
+    <ResponseField name="version" type="string">Project version</ResponseField>
+    <ResponseField name="status" type="string">Project status: `active`, `archived`, or `draft`</ResponseField>
+    <ResponseField name="metadata" type="object">
+      <Expandable title="Metadata">
+        <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+        <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+        <ResponseField name="tags" type="array">Array of tag strings</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="components" type="object">
+      <Expandable title="Components">
+        <ResponseField name="pipelines" type="array">Array of pipeline IDs</ResponseField>
+        <ResponseField name="ontologies" type="array">Array of ontology IDs</ResponseField>
+        <ResponseField name="ml_models" type="array">Array of ML model IDs</ResponseField>
+        <ResponseField name="digital_twins" type="array">Array of digital twin IDs</ResponseField>
+        <ResponseField name="storage_configs" type="array">Array of storage config IDs</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="settings" type="object">
+      <Expandable title="Settings">
+        <ResponseField name="timezone" type="string">Project timezone</ResponseField>
+        <ResponseField name="environment" type="string">Environment name</ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create Project
+
+Creates a new project.
+
+```bash
+curl -X POST http://localhost:8080/api/projects \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Manufacturing Analytics",
+    "description": "IoT sensor analytics for manufacturing",
+    "version": "1.0",
+    "status": "active",
+    "tags": ["manufacturing", "iot"],
+    "settings": {
+      "timezone": "UTC",
+      "environment": "production"
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Project name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Project description
+</ParamField>
+
+<ParamField body="version" type="string" optional>
+  Project version (defaults to "1.0")
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  Project status: `active`, `archived`, or `draft` (defaults to `draft`)
+</ParamField>
+
+<ParamField body="tags" type="array" optional>
+  Array of tag strings
+</ParamField>
+
+<ParamField body="settings" type="object" optional>
+  Project settings
+  <Expandable title="Settings">
+    <ParamField body="timezone" type="string">Timezone (defaults to "UTC")</ParamField>
+    <ParamField body="environment" type="string">Environment name</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="components" type="object" optional>
+  Component associations (empty by default)
+</ParamField>
+
+### Response
+
+Returns the created project object (see List Projects for schema).
+
+---
+
+## Clone Project
+
+Deep-clones an existing project including all its pipelines, ontologies, ML models, digital twins, and storage configurations.
+
+```bash
+curl -X POST http://localhost:8080/api/projects/clone \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_project_id": "proj-123",
+    "name": "Manufacturing Analytics - Dev"
+  }'
+```
+
+### Request Body
+
+<ParamField body="source_project_id" type="string" required>
+  ID of the project to clone
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Name for the cloned project
+</ParamField>
+
+### Response
+
+Returns the cloned project object with new IDs for all cloned components.
+
+---
+
+## Get Project
+
+Returns a single project by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/projects/proj-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Project ID
+</ParamField>
+
+### Response
+
+Returns the project object (see List Projects for schema).
+
+---
+
+## Update Project
+
+Updates a project's name, description, or status.
+
+```bash
+curl -X PUT http://localhost:8080/api/projects/proj-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated description",
+    "status": "active"
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Project ID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="description" type="string" optional>
+  New description
+</ParamField>
+
+<ParamField body="version" type="string" optional>
+  New version
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  New status: `active`, `archived`, or `draft`
+</ParamField>
+
+<ParamField body="settings" type="object" optional>
+  Updated settings
+</ParamField>
+
+<ParamField body="tags" type="array" optional>
+  Updated tags array
+</ParamField>
+
+### Response
+
+Returns the updated project object.
+
+---
+
+## Delete Project
+
+Deletes a project and all its components.
+
+```bash
+curl -X DELETE http://localhost:8080/api/projects/proj-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Project ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## Add Component to Project
+
+Associates a pipeline, ontology, ML model, digital twin, or storage config with a project.
+
+```bash
+curl -X POST http://localhost:8080/api/projects/proj-123/pipelines/pipe-456
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField path="componentType" type="string" required>
+  Component type: `pipelines`, `ontologies`, `mlmodels`, `digitaltwins`, or `storage`
+</ParamField>
+
+<ParamField path="componentId" type="string" required>
+  Component ID to associate
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## Remove Component from Project
+
+Removes the association between a component and a project.
+
+```bash
+curl -X DELETE http://localhost:8080/api/projects/proj-123/pipelines/pipe-456
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField path="componentType" type="string" required>
+  Component type: `pipelines`, `ontologies`, `mlmodels`, `digitaltwins`, or `storage`
+</ParamField>
+
+<ParamField path="componentId" type="string" required>
+  Component ID to disassociate
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.

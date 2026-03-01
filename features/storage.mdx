@@ -1,0 +1,603 @@
+---
+title: 'Storage'
+description: 'Storage backends and CIR data management'
+icon: 'database'
+---
+
+## Overview
+
+Storage backends persist data in CIR (Common Internal Representation) format across diverse systems. Mimir provides a plugin-based architecture supporting multiple backends with a unified interface.
+
+**Supported backends:**
+- Filesystem (local/network)
+- PostgreSQL
+- MySQL
+- MongoDB
+- S3 (AWS, MinIO, compatible)
+- Redis
+- Elasticsearch
+- Neo4j
+
+## Storage Config
+
+```go pkg/models/storage.go:133
+type StorageConfig struct {
+    ID         string
+    ProjectID  string
+    PluginType string                 // Backend type
+    Config     map[string]interface{} // Connection details
+    OntologyID string                 // Optional schema definition
+    Active     bool
+    CreatedAt  string
+    UpdatedAt  string
+}
+```
+
+## Creating a Storage Config
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```bash
+    curl -X POST http://localhost:8080/api/storage/configs \
+      -H "Content-Type: application/json" \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "plugin_type": "postgres",
+        "config": {
+          "connection_string": "postgres://user:pass@localhost:5432/mydb",
+          "options": {
+            "max_connections": 10,
+            "timeout": 30
+          }
+        },
+        "ontology_id": "ont-uuid-7890"
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Filesystem">
+    ```bash
+    curl -X POST http://localhost:8080/api/storage/configs \
+      -H "Content-Type: application/json" \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "plugin_type": "filesystem",
+        "config": {
+          "connection_string": "/data/storage",
+          "options": {
+            "format": "json",
+            "compression": "gzip"
+          }
+        }
+      }'
+    ```
+  </Tab>
+
+  <Tab title="S3">
+    ```bash
+    curl -X POST http://localhost:8080/api/storage/configs \
+      -H "Content-Type: application/json" \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "plugin_type": "s3",
+        "config": {
+          "connection_string": "s3://my-bucket/prefix",
+          "credentials": {
+            "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "region": "us-east-1"
+          },
+          "options": {
+            "encryption": "AES256"
+          }
+        }
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Response">
+    ```json
+    {
+      "id": "storage-uuid-1",
+      "project_id": "proj-uuid-1234",
+      "plugin_type": "postgres",
+      "config": {
+        "connection_string": "postgres://user:***@localhost:5432/mydb",
+        "options": {...}
+      },
+      "ontology_id": "ont-uuid-7890",
+      "active": true,
+      "created_at": "2026-03-01T10:00:00Z",
+      "updated_at": "2026-03-01T10:00:00Z"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Storing Data
+
+All data is stored in CIR format. See [CIR Format](/concepts/cir-format) for details.
+
+```bash
+curl -X POST http://localhost:8080/api/storage/storage-uuid-1/store \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cir_data": {
+      "version": "1.0",
+      "source": {
+        "type": "api",
+        "uri": "https://api.example.com/customers",
+        "timestamp": "2026-03-01T10:30:00Z",
+        "format": "json"
+      },
+      "data": [
+        {
+          "customer_id": "C001",
+          "name": "Alice Johnson",
+          "email": "alice@example.com",
+          "age": 32
+        },
+        {
+          "customer_id": "C002",
+          "name": "Bob Smith",
+          "email": "bob@example.com",
+          "age": 45
+        }
+      ],
+      "metadata": {
+        "size": 1024,
+        "encoding": "utf-8",
+        "record_count": 2
+      }
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "affected_items": 2
+}
+```
+
+```go pkg/storage/service.go:169
+func (s *Service) Store(storageID string, cir *models.CIR) (*models.StorageResult, error) {
+    // Validate CIR
+    if err := cir.Validate(); err != nil {
+        return nil, fmt.Errorf("invalid CIR: %w", err)
+    }
+    
+    storageConfig, err := s.store.GetStorageConfig(storageID)
+    if err != nil {
+        return nil, fmt.Errorf("storage config not found: %w", err)
+    }
+    
+    plugin, err := s.GetPlugin(storageConfig.PluginType)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Initialize and store
+    pluginConfig := &models.PluginConfig{
+        ConnectionString: getConnectionString(storageConfig.Config),
+        Credentials:      getCredentials(storageConfig.Config),
+        Options:          getOptions(storageConfig.Config),
+    }
+    
+    if err := plugin.Initialize(pluginConfig); err != nil {
+        return nil, fmt.Errorf("failed to initialize plugin: %w", err)
+    }
+    
+    return plugin.Store(cir)
+}
+```
+
+## Retrieving Data
+
+Query stored data using CIR queries:
+
+```bash
+curl -X POST http://localhost:8080/api/storage/storage-uuid-1/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "entity_type": "Customer",
+      "filters": [
+        {
+          "attribute": "age",
+          "operator": "gt",
+          "value": 30
+        }
+      ],
+      "order_by": [
+        {"attribute": "name", "direction": "asc"}
+      ],
+      "limit": 10
+    }
+  }'
+```
+
+**Response:**
+```json
+[
+  {
+    "version": "1.0",
+    "source": {
+      "type": "api",
+      "uri": "https://api.example.com/customers",
+      "timestamp": "2026-03-01T10:30:00Z",
+      "format": "json"
+    },
+    "data": {
+      "customer_id": "C001",
+      "name": "Alice Johnson",
+      "email": "alice@example.com",
+      "age": 32
+    },
+    "metadata": {
+      "size": 512,
+      "encoding": "utf-8",
+      "record_count": 1
+    }
+  }
+]
+```
+
+### Query Operators
+
+| Operator | Description | Example |
+|----------|-------------|----------|
+| `eq` | Equals | `{"attribute": "status", "operator": "eq", "value": "active"}` |
+| `neq` | Not equals | `{"attribute": "status", "operator": "neq", "value": "deleted"}` |
+| `gt` | Greater than | `{"attribute": "age", "operator": "gt", "value": 18}` |
+| `gte` | Greater than or equal | `{"attribute": "score", "operator": "gte", "value": 50}` |
+| `lt` | Less than | `{"attribute": "price", "operator": "lt", "value": 100}` |
+| `lte` | Less than or equal | `{"attribute": "stock", "operator": "lte", "value": 10}` |
+| `in` | In array | `{"attribute": "category", "operator": "in", "value": ["A", "B"]}` |
+| `like` | Contains (case-insensitive) | `{"attribute": "name", "operator": "like", "value": "john"}` |
+
+```go pkg/models/storage.go:100
+type CIRCondition struct {
+    Attribute string      `json:"attribute"`
+    Operator  string      `json:"operator"` // eq, neq, gt, gte, lt, lte, in, like
+    Value     interface{} `json:"value"`
+}
+```
+
+## Updating Data
+
+```bash
+curl -X POST http://localhost:8080/api/storage/storage-uuid-1/update \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "filters": [
+        {"attribute": "customer_id", "operator": "eq", "value": "C001"}
+      ]
+    },
+    "updates": {
+      "age": 33,
+      "updated_at": "2026-03-01T14:00:00Z"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "affected_items": 1
+}
+```
+
+## Deleting Data
+
+```bash
+curl -X POST http://localhost:8080/api/storage/storage-uuid-1/delete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "filters": [
+        {"attribute": "status", "operator": "eq", "value": "deleted"}
+      ]
+    }
+  }'
+```
+
+<Warning>
+Deletion is permanent. Consider archiving data by updating a status field instead.
+</Warning>
+
+## Health Check
+
+Verify storage connectivity:
+
+```bash
+curl http://localhost:8080/api/storage/storage-uuid-1/health
+```
+
+**Response:**
+```json
+{
+  "healthy": true,
+  "message": "Storage connection active"
+}
+```
+
+## Storage Plugin Interface
+
+All storage plugins implement the `StoragePlugin` interface:
+
+```go pkg/models/storage.go:28
+type StoragePlugin interface {
+    Initialize(config *PluginConfig) error
+    CreateSchema(ontology *OntologyDefinition) error
+    Store(cir *CIR) (*StorageResult, error)
+    Retrieve(query *CIRQuery) ([]*CIR, error)
+    Update(query *CIRQuery, updates *CIRUpdate) (*StorageResult, error)
+    Delete(query *CIRQuery) (*StorageResult, error)
+    GetMetadata() (*StorageMetadata, error)
+    HealthCheck() (bool, error)
+}
+```
+
+## Dynamic Plugin Loading
+
+Install custom storage plugins from Git repositories:
+
+```bash
+curl -X POST http://localhost:8080/api/storage-plugins/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repository_url": "https://github.com/example/custom-storage-plugin",
+    "git_ref": "main"
+  }'
+```
+
+**Response:**
+```json
+{
+  "name": "custom-storage-plugin",
+  "version": "1.0.0",
+  "status": "active",
+  "repository_url": "https://github.com/example/custom-storage-plugin",
+  "git_commit_hash": "abc123...",
+  "installed_at": "2026-03-01T10:00:00Z"
+}
+```
+
+The plugin is compiled on-the-fly and registered automatically.
+
+```go pkg/storage/service.go:385
+func (s *Service) InstallExternalPlugin(req *models.ExternalStoragePluginInstallRequest) (*models.ExternalStoragePlugin, error) {
+    if s.pluginLoader == nil {
+        return nil, fmt.Errorf("dynamic plugin loading not configured")
+    }
+    
+    gitRef := req.GitRef
+    if gitRef == "" {
+        gitRef = "main"
+    }
+    
+    name := repoName(req.RepositoryURL)
+    
+    // Compile and load
+    sp, commitHash, err := s.pluginLoader.CompileAndLoad(name, req.RepositoryURL, gitRef, "")
+    if err != nil {
+        return nil, fmt.Errorf("failed to compile plugin: %w", err)
+    }
+    
+    // Register
+    s.RegisterPlugin(name, sp)
+    
+    record := &models.ExternalStoragePlugin{
+        Name:          name,
+        RepositoryURL: req.RepositoryURL,
+        GitCommitHash: commitHash,
+        Status:        "active",
+        InstalledAt:   time.Now().UTC(),
+        UpdatedAt:     time.Now().UTC(),
+    }
+    
+    if err := s.store.SaveExternalStoragePlugin(record); err != nil {
+        return nil, fmt.Errorf("failed to persist plugin metadata: %w", err)
+    }
+    
+    return record, nil
+}
+```
+
+## Backend-Specific Configurations
+
+<Tabs>
+  <Tab title="PostgreSQL / MySQL">
+    ```json
+    {
+      "connection_string": "postgres://user:pass@host:5432/db",
+      "options": {
+        "max_connections": 10,
+        "timeout": 30,
+        "ssl_mode": "require"
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="MongoDB">
+    ```json
+    {
+      "connection_string": "mongodb://user:pass@host:27017/db",
+      "options": {
+        "replica_set": "rs0",
+        "read_preference": "primary",
+        "write_concern": "majority"
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="S3">
+    ```json
+    {
+      "connection_string": "s3://bucket-name/prefix",
+      "credentials": {
+        "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+        "secret_access_key": "wJalrXUtn...",
+        "region": "us-east-1"
+      },
+      "options": {
+        "encryption": "AES256",
+        "storage_class": "STANDARD"
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Redis">
+    ```json
+    {
+      "connection_string": "redis://localhost:6379/0",
+      "credentials": {
+        "password": "secret"
+      },
+      "options": {
+        "max_retries": 3,
+        "pool_size": 10
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Elasticsearch">
+    ```json
+    {
+      "connection_string": "http://localhost:9200",
+      "credentials": {
+        "username": "elastic",
+        "password": "secret"
+      },
+      "options": {
+        "index_prefix": "mimir",
+        "refresh_interval": "1s"
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Neo4j">
+    ```json
+    {
+      "connection_string": "neo4j://localhost:7687",
+      "credentials": {
+        "username": "neo4j",
+        "password": "secret"
+      },
+      "options": {
+        "database": "neo4j",
+        "max_connection_lifetime": 3600
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Connection Pooling" icon="water">
+    Configure connection pools for database backends:
+
+    ```json
+    {
+      "options": {
+        "max_connections": 10,
+        "min_idle": 2,
+        "connection_timeout": 30
+      }
+    }
+    ```
+
+    Prevents connection exhaustion under load.
+  </Accordion>
+
+  <Accordion title="Credential Management" icon="key">
+    Use environment variables for sensitive credentials:
+
+    ```json
+    {
+      "credentials": {
+        "password": "${DB_PASSWORD}"
+      }
+    }
+    ```
+
+    Never commit credentials to version control.
+  </Accordion>
+
+  <Accordion title="Schema Migration" icon="arrows-rotate">
+    Link storage configs to ontologies for automatic schema management:
+
+    ```bash
+    curl -X POST /api/storage/configs \
+      -d '{"ontology_id": "ont-uuid-7890", ...}'
+    ```
+
+    The plugin creates tables/collections based on ontology classes.
+  </Accordion>
+
+  <Accordion title="Backup Strategy" icon="hard-drive">
+    Implement regular backups at the storage layer:
+    - **PostgreSQL/MySQL**: Use `pg_dump` / `mysqldump`
+    - **MongoDB**: Use `mongodump`
+    - **S3**: Enable versioning and lifecycle policies
+    - **Filesystem**: Use rsync or snapshot tools
+  </Accordion>
+</AccordionGroup>
+
+## Listing Storage Configs
+
+```bash
+# All storage configs for a project
+curl http://localhost:8080/api/projects/proj-uuid-1234/storage
+
+# All storage configs (admin)
+curl http://localhost:8080/api/storage/configs
+```
+
+## Updating a Storage Config
+
+```bash
+curl -X PATCH http://localhost:8080/api/storage/storage-uuid-1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "connection_string": "postgres://user:pass@new-host:5432/db"
+    },
+    "active": true
+  }'
+```
+
+## Deleting a Storage Config
+
+```bash
+curl -X DELETE http://localhost:8080/api/storage/storage-uuid-1
+```
+
+<Warning>
+Deleting a storage config does not delete the underlying data. It only removes the Mimir connection.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="CIR Format" icon="file-code" href="/concepts/cir-format">
+    Learn about the CIR data format.
+  </Card>
+  <Card title="Pipelines" icon="workflow" href="/features/pipelines">
+    Ingest data into storage backends.
+  </Card>
+  <Card title="Digital Twins" icon="clone" href="/features/digital-twins">
+    Sync storage data into digital twins.
+  </Card>
+</CardGroup>

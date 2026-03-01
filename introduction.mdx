@@ -1,0 +1,164 @@
+---
+title: Introduction
+description: Mimir AIP is an ontology-driven platform for data aggregation, processing, and analysis with built-in AI agent integration
+---
+
+# Welcome to Mimir AIP
+
+Mimir AIP is an ontology-driven platform for data aggregation, processing and analysis. It provides a unified runtime for data ingestion pipelines, machine learning model training and inference, and digital twin management — all backed by a persistent metadata store and exposed as [Model Context Protocol (MCP)](https://modelcontextprotocol.io) tools for direct use by AI agents and LLM-based workflows.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running with Docker Compose in minutes
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Full installation guide for Docker Compose and Kubernetes
+  </Card>
+  <Card
+    title="MCP Integration"
+    icon="plug"
+    href="/mcp/overview"
+  >
+    Connect Mimir AIP to AI agents and LLM workflows
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/overview"
+  >
+    Explore the REST API and MCP tools
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="Data Ingestion & Processing" icon="database">
+    Build configurable pipelines that ingest data from multiple sources, process it through transformation steps, and output to various storage backends. All data is normalized to CIR (Common Internal Representation) format for consistency across backends including PostgreSQL, MySQL, MongoDB, S3, Redis, Elasticsearch, and Neo4j.
+  </Accordion>
+
+  <Accordion title="Machine Learning" icon="brain">
+    Train and deploy machine learning models constrained by your ontology. Supports decision trees, random forests, regression, and neural networks. Workers handle training and inference as Kubernetes jobs, enabling scalable ML workflows.
+  </Accordion>
+
+  <Accordion title="Digital Twins" icon="cube">
+    Create live, queryable in-memory graphs of your entities. Digital twins are initialized from OWL/Turtle ontologies and synchronized from storage backends. Query them using the built-in SPARQL engine.
+  </Accordion>
+
+  <Accordion title="AI Agent Integration" icon="robot">
+    All platform capabilities are exposed as 55 MCP tools, allowing AI agents to create projects, configure pipelines, train models, query digital twins, and more using natural language. Works with any MCP-compatible client including Claude Code.
+  </Accordion>
+</AccordionGroup>
+
+## Architecture Overview
+
+Mimir AIP consists of three main components:
+
+```
+┌──────────────────────────────────────────────────────┐
+│                      Client Layer                    │
+│   Web Frontend (port 3000)   │   MCP Client / Agent  │
+└──────────────┬───────────────┴──────────┬────────────┘
+               │  REST API                │  SSE (MCP)
+               ▼                          ▼
+┌─────────────────────────────────────────────────────┐
+│                    Orchestrator                     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
+│  │ Projects │  │Pipelines │  │   ML Models      │  │
+│  │ Ontology │  │Schedules │  │   Digital Twins  │  │
+│  │ Storage  │  │  Queue   │  │   MCP Server     │  │
+│  └──────────┘  └────┬─────┘  └──────────────────┘  │
+│          SQLite     │                               │
+└─────────────────────┼───────────────────────────────┘
+                      │  Kubernetes Jobs
+                      ▼
+           ┌─────────────────────┐
+           │       Workers       │
+           │  (pipeline, train,  │
+           │   infer, DT sync)   │
+           └──────────┬──────────┘
+                      │
+          ┌───────────▼───────────┐
+          │   Storage Backends    │
+          │  Filesystem · Postgres│
+          │  MySQL · MongoDB · S3 │
+          │  Redis · ES · Neo4j   │
+          └───────────────────────┘
+```
+
+<CardGroup cols={3}>
+  <Card title="Orchestrator" icon="server">
+    The long-running HTTP server managing all metadata in SQLite. Exposes REST API and MCP SSE endpoint. Spawns workers as Kubernetes jobs.
+  </Card>
+  <Card title="Worker" icon="gears">
+    Short-lived Kubernetes jobs that execute pipelines, train ML models, run inference, and sync digital twins. Designed for horizontal scalability.
+  </Card>
+  <Card title="Frontend" icon="window">
+    React/TypeScript single-page application for user-friendly platform management. Communicates exclusively with the orchestrator REST API.
+  </Card>
+</CardGroup>
+
+## Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Project** | Top-level organizational unit grouping pipelines, ontologies, ML models, digital twins, and storage configurations |
+| **Pipeline** | Named, ordered sequence of processing steps (ingestion → processing → output) executed asynchronously by workers |
+| **Schedule** | Cron-based trigger that enqueues pipelines on a recurring basis |
+| **Ontology** | OWL/Turtle vocabulary defining entity types, properties, and relationships for a project domain |
+| **Storage Config** | Connection definition for storage backends with data normalized to CIR format |
+| **CIR** | Common Internal Representation — normalized record format with source, data, and metadata blocks |
+| **ML Model** | Model definition linked to an ontology for training and inference by workers |
+| **Digital Twin** | Live in-memory graph initialized from ontology and synchronized from storage |
+| **MCP** | Model Context Protocol — exposes 55 tools for AI agent interaction |
+
+<Note>
+  Mimir AIP is built in Go for performance and ease of deployment. It runs on Kubernetes and supports a wide range of storage backends, making it an extensible solution for small and medium-sized enterprises.
+</Note>
+
+## Why Mimir AIP?
+
+<CardGroup cols={2}>
+  <Card title="Unified Platform" icon="layer-group">
+    Consolidate data pipelines, ML workflows, and digital twins in a single platform with consistent APIs and tooling
+  </Card>
+  <Card title="Ontology-Driven" icon="sitemap">
+    Structure your data and models around formal ontologies, ensuring semantic consistency and enabling advanced reasoning
+  </Card>
+  <Card title="Cloud-Native" icon="cloud">
+    Built for Kubernetes with horizontal scaling, resource isolation, and multi-cluster support for edge and cloud deployments
+  </Card>
+  <Card title="Agent-Ready" icon="wand-magic-sparkles">
+    Expose all capabilities as MCP tools, allowing AI agents to configure and operate the platform using natural language
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Steps>
+  <Step title="Quick Start">
+    Get Mimir AIP running locally with Docker Compose in under 5 minutes
+    
+    [Start Quick Start →](/quickstart)
+  </Step>
+  
+  <Step title="Deploy to Kubernetes">
+    Install Mimir AIP on your Kubernetes cluster with full worker support
+    
+    [View Installation Guide →](/installation)
+  </Step>
+  
+  <Step title="Connect an AI Agent">
+    Integrate Mimir AIP with Claude Code or other MCP clients
+    
+    [Configure MCP Integration →](/mcp/setup)
+  </Step>
+</Steps>

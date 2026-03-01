@@ -1,0 +1,263 @@
+---
+title: Docker Compose Deployment
+description: Deploy Mimir AIP locally using Docker Compose
+---
+
+The Docker Compose deployment is the simplest way to run Mimir AIP locally for development, testing, or single-machine deployments. This method starts the orchestrator and frontend services, but worker jobs are not available without Kubernetes.
+
+## Prerequisites
+
+- Docker Engine 20.10 or later
+- Docker Compose v2.0 or later
+- 4GB available RAM (recommended)
+- 10GB available disk space
+
+## Quick Start
+
+<Steps>
+
+<Step title="Clone the repository">
+
+```bash
+git clone https://github.com/mimir-aip/mimir-aip-go
+cd mimir-aip-go
+```
+
+</Step>
+
+<Step title="Start the services">
+
+```bash
+docker compose up --build
+```
+
+This command will:
+- Build the orchestrator and frontend images
+- Start both services with health checks
+- Create a persistent volume for data storage
+- Set up a bridge network for service communication
+
+</Step>
+
+<Step title="Verify the deployment">
+
+Once started, the following services will be available:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Orchestrator API | http://localhost:8080 | REST API and health endpoints |
+| Web Frontend | http://localhost:3000 | React-based management UI |
+| MCP SSE endpoint | http://localhost:8080/mcp/sse | Model Context Protocol server |
+
+Check the orchestrator health:
+
+```bash
+curl http://localhost:8080/health
+```
+
+</Step>
+
+</Steps>
+
+## Configuration
+
+The `docker-compose.yaml` file defines the following services:
+
+### Orchestrator Service
+
+```yaml
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: cmd/orchestrator/Dockerfile
+    image: mimir-aip/orchestrator:latest
+    container_name: mimir-orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
+      - PORT=8080
+      - STORAGE_DIR=/app/data
+      - MIN_WORKERS=1
+      - MAX_WORKERS=10
+      - QUEUE_THRESHOLD=5
+    volumes:
+      - orchestrator-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+```
+
+### Frontend Service
+
+```yaml
+frontend:
+  build:
+    context: .
+    dockerfile: frontend/Dockerfile
+  image: mimir-aip/frontend:latest
+  container_name: mimir-frontend
+  ports:
+    - "3000:3000"
+  environment:
+    - PORT=3000
+    - API_URL=http://orchestrator:8080
+  depends_on:
+    orchestrator:
+      condition: service_healthy
+```
+
+## Customizing Environment Variables
+
+You can override the default configuration by creating a `.env` file or modifying the `docker-compose.yaml` directly:
+
+```bash
+# .env file
+ENVIRONMENT=development
+LOG_LEVEL=debug
+PORT=8080
+STORAGE_DIR=/app/data
+MIN_WORKERS=2
+MAX_WORKERS=20
+QUEUE_THRESHOLD=10
+```
+
+See the [Configuration Reference](/deployment/configuration) for all available environment variables.
+
+## Data Persistence
+
+The orchestrator uses a named Docker volume `orchestrator-data` to persist:
+- SQLite database (`mimir.db`)
+- Uploaded files and project data
+- Plugin artifacts
+
+To inspect the volume:
+
+```bash
+docker volume inspect mimir-aip-go_orchestrator-data
+```
+
+To back up the data:
+
+```bash
+docker run --rm -v mimir-aip-go_orchestrator-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/mimir-backup.tar.gz -C /data .
+```
+
+## Managing the Deployment
+
+### Stop services
+
+```bash
+docker compose down
+```
+
+This stops and removes containers but preserves the data volume.
+
+### Stop and remove all data
+
+```bash
+docker compose down -v
+```
+
+<Warning>
+This command deletes the persistent volume and all data.
+</Warning>
+
+### View logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Orchestrator only
+docker compose logs -f orchestrator
+
+# Frontend only
+docker compose logs -f frontend
+```
+
+### Restart a service
+
+```bash
+docker compose restart orchestrator
+```
+
+### Rebuild after code changes
+
+```bash
+docker compose up --build --force-recreate
+```
+
+## Limitations
+
+Docker Compose deployments have the following limitations:
+
+- **No worker execution**: Pipeline execution, ML training, and digital twin synchronization require Kubernetes workers
+- **Single orchestrator**: No high availability or horizontal scaling
+- **Local storage only**: SQLite is not suitable for distributed deployments
+
+For production deployments with full functionality, use [Kubernetes with Helm](/deployment/kubernetes).
+
+## Networking
+
+The deployment creates a bridge network `mimir-network` for service communication:
+
+```yaml
+networks:
+  mimir-network:
+    driver: bridge
+```
+
+Services communicate using their container names:
+- Frontend → Orchestrator: `http://orchestrator:8080`
+- External → Orchestrator: `http://localhost:8080`
+- External → Frontend: `http://localhost:3000`
+
+## Troubleshooting
+
+### Orchestrator fails to start
+
+Check the logs for errors:
+
+```bash
+docker compose logs orchestrator
+```
+
+Common issues:
+- **Port conflict**: Another service is using port 8080 or 3000
+- **Permission errors**: Docker doesn't have permission to create the volume
+- **Out of memory**: Increase Docker's memory limit
+
+### Health check failing
+
+The orchestrator may take 15-20 seconds to initialize. If it continues to fail:
+
+```bash
+# Check if the service is responding
+curl -v http://localhost:8080/health
+
+# Inspect the health check status
+docker inspect mimir-orchestrator | grep -A 10 Health
+```
+
+### Cannot connect to frontend
+
+Ensure the orchestrator is healthy before the frontend starts:
+
+```bash
+docker compose ps
+```
+
+The frontend depends on `orchestrator: condition: service_healthy`.
+
+## Next Steps
+
+- Configure [MCP integration](/mcp/overview) to expose tools to AI agents
+- Review the [Configuration Reference](/deployment/configuration) for advanced settings
+- Upgrade to [Kubernetes deployment](/deployment/kubernetes) for production use

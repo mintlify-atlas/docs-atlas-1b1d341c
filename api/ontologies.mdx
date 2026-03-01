@@ -1,0 +1,244 @@
+---
+title: 'Ontologies API'
+description: 'Manage OWL/Turtle ontologies and schema extraction'
+---
+
+## List Ontologies
+
+Returns all ontologies for a project.
+
+```bash
+curl -X GET "http://localhost:8080/api/ontologies?project_id=proj-123"
+```
+
+### Query Parameters
+
+<ParamField query="project_id" type="string" required>
+  Filter by project ID
+</ParamField>
+
+### Response
+
+<ResponseField name="ontologies" type="array">
+  Array of ontology objects
+  <Expandable title="Ontology Object">
+    <ResponseField name="id" type="string">Ontology ID</ResponseField>
+    <ResponseField name="project_id" type="string">Associated project ID</ResponseField>
+    <ResponseField name="name" type="string">Ontology name</ResponseField>
+    <ResponseField name="description" type="string">Ontology description</ResponseField>
+    <ResponseField name="version" type="string">Ontology version</ResponseField>
+    <ResponseField name="content" type="string">Turtle (.ttl) format content</ResponseField>
+    <ResponseField name="status" type="string">Status: `draft`, `active`, or `archived`</ResponseField>
+    <ResponseField name="is_generated" type="boolean">True if auto-generated from extraction</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create Ontology
+
+Creates a new OWL/Turtle ontology for a project.
+
+```bash
+curl -X POST http://localhost:8080/api/ontologies \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "name": "Manufacturing Ontology",
+    "description": "Ontology for IoT sensor data",
+    "version": "1.0",
+    "content": "@prefix : <http://example.org/manufacturing#> .\n:Sensor a owl:Class .",
+    "status": "draft"
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID to associate with
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Ontology name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Ontology description
+</ParamField>
+
+<ParamField body="version" type="string" optional>
+  Ontology version (defaults to "1.0")
+</ParamField>
+
+<ParamField body="content" type="string" required>
+  Turtle (.ttl) format content following OWL 2 specifications
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  Status: `draft`, `active`, or `archived` (defaults to `draft`)
+</ParamField>
+
+<ParamField body="is_generated" type="boolean" optional>
+  True if auto-generated (defaults to false)
+</ParamField>
+
+### Response
+
+Returns the created ontology object.
+
+---
+
+## Get Ontology
+
+Returns a single ontology by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/ontologies/onto-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Ontology ID
+</ParamField>
+
+### Response
+
+Returns the ontology object (see List Ontologies for schema).
+
+---
+
+## Update Ontology
+
+Updates an ontology's content, status, or metadata.
+
+```bash
+curl -X PUT http://localhost:8080/api/ontologies/onto-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "active",
+    "version": "1.1"
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Ontology ID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="name" type="string" optional>
+  New name
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  New description
+</ParamField>
+
+<ParamField body="version" type="string" optional>
+  New version
+</ParamField>
+
+<ParamField body="content" type="string" optional>
+  New Turtle (.ttl) content
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  New status: `draft`, `active`, or `archived`
+</ParamField>
+
+### Response
+
+Returns the updated ontology object.
+
+---
+
+## Delete Ontology
+
+Deletes an ontology.
+
+```bash
+curl -X DELETE http://localhost:8080/api/ontologies/onto-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Ontology ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
+
+---
+
+## Extract Ontology from Data
+
+Runs the schema-inductive extraction algorithm over the specified storage backends, generates an OWL/Turtle ontology, and diffs it against existing active ontologies. If changes are detected the new ontology is flagged as `needs_review` and the diff is returned.
+
+```bash
+curl -X POST http://localhost:8080/api/extraction/generate-ontology \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "storage_ids": ["storage-456", "storage-789"],
+    "ontology_name": "Auto-extracted Manufacturing Schema",
+    "include_structured": true,
+    "include_unstructured": false
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID
+</ParamField>
+
+<ParamField body="storage_ids" type="array" required>
+  Array of storage config IDs to extract from
+</ParamField>
+
+<ParamField body="ontology_name" type="string" required>
+  Name for the generated ontology
+</ParamField>
+
+<ParamField body="include_structured" type="boolean" optional>
+  Extract from structured data (defaults to true)
+</ParamField>
+
+<ParamField body="include_unstructured" type="boolean" optional>
+  Extract from unstructured data (defaults to false)
+</ParamField>
+
+### Response
+
+<ResponseField name="ontology" type="object">
+  The generated ontology object
+</ResponseField>
+
+<ResponseField name="extraction_summary" type="object">
+  Entity and relationship counts from the extraction process
+  <Expandable title="Summary Fields">
+    <ResponseField name="entities_extracted" type="number">Number of entities extracted</ResponseField>
+    <ResponseField name="relationships_extracted" type="number">Number of relationships extracted</ResponseField>
+    <ResponseField name="sources_analyzed" type="number">Number of data sources analyzed</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="ontology_diff" type="object">
+  Diff against the existing active ontology, if any
+  <Expandable title="Diff Fields">
+    <ResponseField name="added_classes" type="array">New classes in generated ontology</ResponseField>
+    <ResponseField name="removed_classes" type="array">Classes present in active but not in generated</ResponseField>
+    <ResponseField name="added_properties" type="array">New properties in generated ontology</ResponseField>
+    <ResponseField name="removed_properties" type="array">Properties present in active but not in generated</ResponseField>
+    <ResponseField name="has_changes" type="boolean">True if any changes detected</ResponseField>
+  </Expandable>
+</ResponseField>

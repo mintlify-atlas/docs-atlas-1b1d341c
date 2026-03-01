@@ -1,0 +1,249 @@
+---
+title: 'Pipelines API'
+description: 'Create and execute data processing pipelines'
+---
+
+## List Pipelines
+
+Returns all pipelines, optionally filtered by project.
+
+```bash
+curl -X GET http://localhost:8080/api/pipelines?project_id=proj-123
+```
+
+### Query Parameters
+
+<ParamField query="project_id" type="string" optional>
+  Filter by project ID
+</ParamField>
+
+### Response
+
+<ResponseField name="pipelines" type="array">
+  Array of pipeline objects
+  <Expandable title="Pipeline Object">
+    <ResponseField name="id" type="string">Pipeline ID</ResponseField>
+    <ResponseField name="project_id" type="string">Associated project ID</ResponseField>
+    <ResponseField name="name" type="string">Pipeline name</ResponseField>
+    <ResponseField name="type" type="string">Pipeline type: `ingestion`, `processing`, or `output`</ResponseField>
+    <ResponseField name="description" type="string">Pipeline description</ResponseField>
+    <ResponseField name="status" type="string">Status: `active`, `inactive`, or `draft`</ResponseField>
+    <ResponseField name="steps" type="array">
+      Array of pipeline step objects
+      <Expandable title="Step Object">
+        <ResponseField name="name" type="string">Step name</ResponseField>
+        <ResponseField name="plugin" type="string">Plugin name</ResponseField>
+        <ResponseField name="action" type="string">Action to execute</ResponseField>
+        <ResponseField name="parameters" type="object">Step parameters (key-value pairs)</ResponseField>
+        <ResponseField name="output" type="object">Output variable mappings</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create Pipeline
+
+Creates a new pipeline.
+
+```bash
+curl -X POST http://localhost:8080/api/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "name": "Sensor Data Ingestion",
+    "type": "ingestion",
+    "description": "Ingest IoT sensor data from MQTT broker",
+    "steps": [
+      {
+        "name": "read_mqtt",
+        "plugin": "mqtt",
+        "action": "subscribe",
+        "parameters": {
+          "broker": "mqtt://broker.example.com",
+          "topic": "sensors/#"
+        },
+        "output": {
+          "messages": "mqtt_messages"
+        }
+      },
+      {
+        "name": "transform",
+        "plugin": "transform",
+        "action": "convert_to_cir",
+        "parameters": {
+          "input": "{{mqtt_messages}}",
+          "format": "json"
+        }
+      }
+    ]
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID to associate with
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Pipeline name
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Pipeline type: `ingestion`, `processing`, or `output`
+</ParamField>
+
+<ParamField body="description" type="string" optional>
+  Pipeline description
+</ParamField>
+
+<ParamField body="steps" type="array" required>
+  Array of pipeline steps
+  <Expandable title="Step Object">
+    <ParamField body="name" type="string" required>Step name (unique within pipeline)</ParamField>
+    <ParamField body="plugin" type="string" required>Plugin name to use</ParamField>
+    <ParamField body="action" type="string" required>Action to execute</ParamField>
+    <ParamField body="parameters" type="object" optional>Step parameters (key-value pairs)</ParamField>
+    <ParamField body="output" type="object" optional>Output variable mappings</ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+Returns the created pipeline object.
+
+---
+
+## Execute Pipeline
+
+Enqueues a pipeline for asynchronous execution by a worker.
+
+```bash
+curl -X POST http://localhost:8080/api/pipelines/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline_id": "pipe-123",
+    "trigger_type": "manual",
+    "triggered_by": "user@example.com",
+    "parameters": {
+      "start_date": "2024-01-01"
+    }
+  }'
+```
+
+### Request Body
+
+<ParamField body="pipeline_id" type="string" required>
+  Pipeline ID to execute
+</ParamField>
+
+<ParamField body="trigger_type" type="string" required>
+  Trigger type: `manual`, `scheduled`, or `automatic`
+</ParamField>
+
+<ParamField body="triggered_by" type="string" optional>
+  User or system that triggered execution
+</ParamField>
+
+<ParamField body="parameters" type="object" optional>
+  Runtime parameters to pass to the pipeline
+</ParamField>
+
+### Response
+
+Returns a work task object representing the queued execution:
+
+<ResponseField name="worktask_id" type="string">Work task ID</ResponseField>
+<ResponseField name="type" type="string">Always `pipeline_execution`</ResponseField>
+<ResponseField name="status" type="string">Current status: `queued`, `scheduled`, `spawned`, `executing`, `completed`, `failed`, `timeout`, or `cancelled`</ResponseField>
+<ResponseField name="priority" type="number">Task priority (higher = higher priority)</ResponseField>
+<ResponseField name="submitted_at" type="string">ISO 8601 timestamp</ResponseField>
+<ResponseField name="project_id" type="string">Project ID</ResponseField>
+<ResponseField name="task_spec" type="object">
+  Task-specific parameters including `pipeline_id`
+</ResponseField>
+
+---
+
+## Get Pipeline
+
+Returns a single pipeline by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/pipelines/pipe-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Pipeline ID
+</ParamField>
+
+### Response
+
+Returns the pipeline object (see List Pipelines for schema).
+
+---
+
+## Update Pipeline
+
+Updates a pipeline's description, steps, or status.
+
+```bash
+curl -X PUT http://localhost:8080/api/pipelines/pipe-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated description",
+    "status": "active"
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Pipeline ID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="description" type="string" optional>
+  New description
+</ParamField>
+
+<ParamField body="steps" type="array" optional>
+  New steps array (replaces existing steps)
+</ParamField>
+
+<ParamField body="status" type="string" optional>
+  New status: `active`, `inactive`, or `draft`
+</ParamField>
+
+### Response
+
+Returns the updated pipeline object.
+
+---
+
+## Delete Pipeline
+
+Deletes a pipeline.
+
+```bash
+curl -X DELETE http://localhost:8080/api/pipelines/pipe-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Pipeline ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.

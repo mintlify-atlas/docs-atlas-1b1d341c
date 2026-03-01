@@ -1,0 +1,205 @@
+---
+title: MCP Integration Overview
+description: Connect Mimir AIP to AI agents via the Model Context Protocol
+---
+
+Mimir AIP exposes its entire platform API through the **Model Context Protocol (MCP)**, enabling AI agents and LLM-powered workflows to directly manage projects, pipelines, ML models, digital twins, ontologies, and storage backends using natural language.
+
+## What is MCP?
+
+[Model Context Protocol](https://modelcontextprotocol.io) is an open standard that allows AI agents to interact with external systems through a standardized tool interface. Instead of writing custom integrations, MCP provides a universal way for LLMs to invoke functions, query data, and orchestrate workflows.
+
+## Why Use MCP with Mimir?
+
+Mimir AIP is designed as an **agent-first platform**. The MCP integration enables:
+
+- **Natural language control**: Configure pipelines, train models, and query digital twins using conversational AI
+- **Workflow automation**: Chain complex operations across multiple Mimir resources
+- **Reduced integration overhead**: Use any MCP-compatible client (Claude Desktop, Claude Code, custom agents) without writing API wrappers
+- **Observability**: Track long-running tasks (ML training, pipeline execution) via work task APIs
+- **Ontology-driven intelligence**: Generate ontologies from text or storage, then use them to structure data and ML models
+
+## Architecture
+
+Mimir's MCP server is embedded in the orchestrator and exposes 55+ tools over a Server-Sent Events (SSE) transport:
+
+```
+┌─────────────────────────────────────┐
+│   AI Agent / MCP Client             │
+│   (Claude Code, Custom Agent)       │
+└──────────────┬──────────────────────┘
+               │ MCP over SSE
+               ▼
+┌─────────────────────────────────────┐
+│   Mimir Orchestrator                │
+│   ┌─────────────────────────────┐   │
+│   │   MCP Server (55 tools)     │   │
+│   │   /mcp/sse endpoint         │   │
+│   └─────────┬───────────────────┘   │
+│             │                        │
+│   ┌─────────▼──────┐  ┌───────────┐ │
+│   │  Services      │  │  SQLite   │ │
+│   │  (Projects,    │  │  Metadata │ │
+│   │   Pipelines,   │  │           │ │
+│   │   ML, DT, etc) │  │           │ │
+│   └────────────────┘  └───────────┘ │
+└─────────────────────────────────────┘
+               │ Kubernetes Jobs
+               ▼
+         ┌──────────┐
+         │ Workers  │
+         └──────────┘
+```
+
+## Tool Categories
+
+Mimir exposes **55 MCP tools** organized into 8 categories:
+
+| Category | Tool Count | Description |
+|----------|------------|-------------|
+| **Projects** | 8 | Create, list, update, delete, clone projects; manage component associations (pipelines, ontologies, models, twins, storage) |
+| **Pipelines** | 6 | Define data ingestion/processing/output pipelines; execute them asynchronously |
+| **Schedules** | 5 | Create cron-based triggers to run pipelines on a recurring schedule |
+| **ML Models** | 7 | Define, train, and run inference on decision trees, random forests, regression, or neural networks; get model recommendations |
+| **Digital Twins** | 7 | Create in-memory entity graphs; sync from storage; query with SPARQL |
+| **Ontologies** | 6 | Create/update OWL ontologies; generate from text or extract from storage; diff ontologies |
+| **Storage** | 10 | Configure storage backends (filesystem, PostgreSQL, MySQL, MongoDB, S3, Redis, Elasticsearch, Neo4j); store/retrieve/update/delete CIR records; health checks |
+| **Tasks** | 3 | List queued/running work tasks; poll task status; wait for completion |
+| **System** | 1 | Platform health check |
+
+## Common Use Cases
+
+### 1. Conversational Project Setup
+
+Ask your agent:
+> "Create a new Mimir project called 'SmartFactory', then add a PostgreSQL storage backend with connection string 'postgres://...', and generate an ontology by extracting entities from that database."
+
+The agent orchestrates:
+1. `create_project`
+2. `create_storage_config`
+3. `extract_and_generate_ontology`
+
+### 2. Automated ML Training Pipeline
+
+> "Train a random forest model on the 'sensor-data' storage for the 'SmartFactory' project, then run inference on new data and sync the results to the digital twin."
+
+The agent:
+1. `create_ml_model` (type: `random_forest`)
+2. `train_ml_model` → returns task ID
+3. `wait_for_task` → polls until training completes
+4. `run_inference` → enqueues inference job
+5. `sync_digital_twin` → updates entity graph with predictions
+
+### 3. Scheduled Data Ingestion
+
+> "Set up an hourly pipeline that ingests IoT telemetry from the 'devices' storage, transforms it with the 'normalize' plugin, and outputs to the 'warehouse' database."
+
+The agent:
+1. `create_pipeline` (type: `ingestion`, steps: `[{...}]`)
+2. `create_schedule` (cron: `"0 * * * *"`, pipeline_ids: `[...]`)
+
+### 4. Digital Twin Querying
+
+> "Show me all sensors in building A that have temperature readings above 80°C in the last hour."
+
+The agent:
+1. `query_digital_twin` with SPARQL:
+```sparql
+SELECT ?sensor ?temp WHERE {
+  ?sensor a :Sensor ;
+          :locatedIn :BuildingA ;
+          :temperature ?temp .
+  FILTER(?temp > 80)
+}
+LIMIT 50
+```
+
+## Transport and Protocol
+
+Mimir's MCP server uses **Server-Sent Events (SSE)** as the transport layer:
+
+- **Endpoint**: `http://localhost:8080/mcp/sse`
+- **Connection**: Long-lived HTTP connection with event streaming
+- **Authentication**: Currently unauthenticated (suitable for local/trusted networks); add reverse proxy auth for production
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Setup Guide" icon="rocket" href="/mcp/setup">
+    Configure Claude Code or other MCP clients to connect to Mimir
+  </Card>
+  <Card title="Tools Reference" icon="book" href="/mcp/tools-reference">
+    Complete documentation of all 55 MCP tools with parameters and examples
+  </Card>
+</CardGroup>
+
+## Example Workflow
+
+Here's a complete end-to-end example of using Mimir via MCP:
+
+```typescript
+// Assume MCP client session connected to http://localhost:8080/mcp/sse
+
+// 1. Create a project
+const project = await mcp.call('create_project', {
+  name: 'IoT-Analytics',
+  description: 'Real-time IoT data processing and ML',
+  version: '1.0.0',
+  tags: 'iot,ml,production'
+});
+
+// 2. Add PostgreSQL storage
+const storage = await mcp.call('create_storage_config', {
+  project_id: project.id,
+  type: 'postgresql',
+  config: JSON.stringify({
+    connection_string: 'postgresql://user:pass@localhost:5432/iot'
+  })
+});
+
+// 3. Generate ontology from database schema
+const ontology = await mcp.call('extract_and_generate_ontology', {
+  project_id: project.id,
+  storage_ids: storage.id,
+  ontology_name: 'IoT-Ontology'
+});
+
+// 4. Create ML model
+const model = await mcp.call('create_ml_model', {
+  project_id: project.id,
+  ontology_id: ontology.ontology.id,
+  name: 'Anomaly-Detector',
+  type: 'random_forest',
+  config: JSON.stringify({ max_depth: 10, n_estimators: 100 })
+});
+
+// 5. Train the model
+const trainingTask = await mcp.call('train_ml_model', {
+  model_id: model.id,
+  storage_ids: storage.id
+});
+
+// 6. Wait for training to complete
+const completedTask = await mcp.call('wait_for_task', {
+  id: trainingTask.task_id,
+  timeout_seconds: 600
+});
+
+console.log('Model trained:', completedTask.status);
+```
+
+## Security Considerations
+
+- **Local development**: The default SSE endpoint has no authentication and is suitable for localhost development
+- **Production deployment**: Place Mimir behind a reverse proxy (nginx, Traefik) with:
+  - TLS/SSL termination
+  - Bearer token or API key authentication
+  - Rate limiting
+- **Network isolation**: Run Mimir in a private Kubernetes network; expose MCP endpoint only to authorized clients
+
+## Limitations
+
+- **Stateless**: Each MCP tool call is independent; the server does not maintain conversation context
+- **Long-running operations**: Training and pipeline execution return task IDs; use `wait_for_task` or poll `get_work_task` for completion
+- **Bulk operations**: Some tools (e.g., `store_data`) accept arrays but have practical limits; for large datasets, use batch pipelines instead
+- **SPARQL complexity**: The `query_digital_twin` tool supports standard SPARQL but queries are executed in-memory; very large graphs may require optimization

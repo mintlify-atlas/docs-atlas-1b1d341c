@@ -1,0 +1,411 @@
+---
+title: MCP Setup Guide
+description: Connect Claude Code and other MCP clients to Mimir AIP
+---
+
+This guide walks you through configuring MCP clients to connect to your Mimir AIP instance.
+
+## Prerequisites
+
+1. **Mimir AIP running**: Ensure the orchestrator is accessible at `http://localhost:8080` (or your deployment URL)
+2. **MCP endpoint available**: Verify `http://localhost:8080/mcp/sse` responds (you can test with `curl`)
+
+```bash
+# Test MCP endpoint
+curl -N http://localhost:8080/mcp/sse
+```
+
+You should see an SSE connection open (it will hang waiting for events, which is correct).
+
+---
+
+## Claude Code
+
+**Claude Code** is a VS Code extension and CLI tool that supports MCP servers via SSE.
+
+### Installation
+
+If you haven't installed Claude Code yet:
+
+```bash
+# Install Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+
+# Or install the VS Code extension
+# Search for "Claude Code" in VS Code marketplace
+```
+
+### Configuration
+
+#### Method 1: Using the CLI
+
+```bash
+claude mcp add mimir --type sse --url http://localhost:8080/mcp/sse
+```
+
+This adds Mimir to your MCP server registry.
+
+#### Method 2: Manual JSON Configuration
+
+Edit your MCP configuration file:
+
+- **macOS/Linux**: `~/.claude/mcp_servers.json`
+- **Windows**: `%APPDATA%\claude\mcp_servers.json`
+
+Add the following entry:
+
+```json
+{
+  "mcpServers": {
+    "mimir": {
+      "type": "sse",
+      "url": "http://localhost:8080/mcp/sse",
+      "description": "Mimir AIP - Ontology-driven data platform"
+    }
+  }
+}
+```
+
+### Verify Connection
+
+Start a Claude Code session:
+
+```bash
+claude
+```
+
+Then ask:
+> "What Mimir tools are available?"
+
+Claude should list all 55 tools. You can also test a simple command:
+> "Check the health of the Mimir platform."
+
+Expected response:
+```json
+{
+  "status": "healthy",
+  "platform": "Mimir AIP",
+  "version": "1.0.0"
+}
+```
+
+### Example Commands
+
+Once connected, try these natural language commands:
+
+```
+# List all projects
+"List all projects in Mimir"
+
+# Create a new project
+"Create a Mimir project called 'DataPipeline' with tags ml,production"
+
+# Add storage
+"Add a PostgreSQL storage backend to project <project-id> with connection string postgres://..."
+
+# Generate an ontology
+"Generate an ontology from the text: 'A factory has machines. Each machine has sensors that measure temperature and pressure.'"
+```
+
+---
+
+## Claude Desktop
+
+**Claude Desktop** (Anthropic's desktop app) supports MCP servers.
+
+### Configuration
+
+1. Open Claude Desktop
+2. Go to **Settings** → **Developer** → **MCP Servers**
+3. Click **Add Server**
+4. Enter:
+   - **Name**: `Mimir`
+   - **Type**: `SSE`
+   - **URL**: `http://localhost:8080/mcp/sse`
+5. Save and restart Claude Desktop
+
+### Usage
+
+Start a new conversation and ask:
+> "What can you do with Mimir?"
+
+Claude will list available capabilities based on the tool descriptions.
+
+---
+
+## Custom MCP Clients
+
+If you're building a custom agent or integration, use any MCP-compatible client library.
+
+### Node.js Example
+
+```bash
+npm install @modelcontextprotocol/sdk
+```
+
+```typescript
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+
+const transport = new SSEClientTransport(
+  new URL('http://localhost:8080/mcp/sse')
+);
+
+const client = new Client({
+  name: 'my-mimir-agent',
+  version: '1.0.0'
+}, {
+  capabilities: {}
+});
+
+await client.connect(transport);
+
+// List available tools
+const tools = await client.listTools();
+console.log('Available tools:', tools.tools.map(t => t.name));
+
+// Call a tool
+const result = await client.callTool({
+  name: 'list_projects',
+  arguments: {
+    status: 'active'
+  }
+});
+
+console.log('Projects:', JSON.parse(result.content[0].text));
+
+await client.close();
+```
+
+### Python Example
+
+```bash
+pip install mcp
+```
+
+```python
+import asyncio
+from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
+
+async def main():
+    async with sse_client("http://localhost:8080/mcp/sse") as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            
+            # List tools
+            tools = await session.list_tools()
+            print(f"Found {len(tools.tools)} tools")
+            
+            # Call health_check
+            result = await session.call_tool("health_check", arguments={})
+            print("Health:", result.content[0].text)
+            
+            # List projects
+            result = await session.call_tool("list_projects", arguments={"status": "active"})
+            print("Projects:", result.content[0].text)
+
+asyncio.run(main())
+```
+
+---
+
+## Remote Deployment
+
+If Mimir is deployed on a remote server or Kubernetes cluster:
+
+### 1. Port Forwarding (Development)
+
+```bash
+# Kubernetes
+kubectl port-forward -n mimir-aip svc/mimir-aip-orchestrator 8080:8080
+
+# SSH tunnel
+ssh -L 8080:localhost:8080 user@remote-server
+```
+
+Then configure MCP clients to use `http://localhost:8080/mcp/sse`.
+
+### 2. Ingress (Production)
+
+Expose the MCP endpoint via an Ingress with TLS and authentication:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mimir-mcp-ingress
+  namespace: mimir-aip
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: mcp-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Mimir MCP'
+spec:
+  tls:
+  - hosts:
+    - mimir.example.com
+    secretName: mimir-tls
+  rules:
+  - host: mimir.example.com
+    http:
+      paths:
+      - path: /mcp/sse
+        pathType: Prefix
+        backend:
+          service:
+            name: mimir-aip-orchestrator
+            port:
+              number: 8080
+```
+
+Create a basic auth secret:
+
+```bash
+htpasswd -c auth mimir-user
+kubectl create secret generic mcp-auth --from-file=auth -n mimir-aip
+```
+
+Then configure MCP clients to use:
+```
+https://mimir-user:password@mimir.example.com/mcp/sse
+```
+
+### 3. Reverse Proxy (Docker Compose)
+
+Add nginx to your `docker-compose.yml`:
+
+```yaml
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - orchestrator
+
+  orchestrator:
+    # ... existing orchestrator config
+    expose:
+      - "8080"
+```
+
+`nginx.conf`:
+
+```nginx
+http {
+  upstream mimir {
+    server orchestrator:8080;
+  }
+
+  server {
+    listen 443 ssl;
+    server_name mimir.local;
+
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+    location /mcp/sse {
+      proxy_pass http://mimir/mcp/sse;
+      proxy_http_version 1.1;
+      proxy_set_header Connection "";
+      proxy_buffering off;
+      proxy_cache off;
+      proxy_read_timeout 86400;
+    }
+  }
+}
+```
+
+---
+
+## Troubleshooting
+
+### Connection Refused
+
+**Symptom**: MCP client cannot connect to `http://localhost:8080/mcp/sse`
+
+**Solutions**:
+1. Verify orchestrator is running: `curl http://localhost:8080/health`
+2. Check orchestrator logs for errors: `docker logs mimir-orchestrator` or `kubectl logs -n mimir-aip deployment/mimir-aip-orchestrator`
+3. Ensure port 8080 is exposed (check `docker-compose.yml` or Kubernetes Service)
+
+### No Tools Listed
+
+**Symptom**: MCP client connects but shows 0 tools
+
+**Solutions**:
+1. Verify MCP server initialized: check orchestrator logs for `"MCP server started"`
+2. Test endpoint manually:
+   ```bash
+   curl -H "Accept: text/event-stream" http://localhost:8080/mcp/sse
+   ```
+3. Ensure MCP SDK versions are compatible (Mimir uses `mcp-go` which implements MCP 2024-11-05)
+
+### Tool Calls Fail
+
+**Symptom**: Tools are listed but calls return errors
+
+**Solutions**:
+1. Check orchestrator logs for detailed error messages
+2. Verify required parameters are provided (see [Tools Reference](/mcp/tools-reference))
+3. Ensure referenced resources exist (e.g., project_id, storage_id)
+4. For JSON parameters (e.g., `steps`, `config`), validate JSON syntax
+
+### SSE Connection Drops
+
+**Symptom**: MCP client disconnects after a few minutes
+
+**Solutions**:
+1. Check reverse proxy/ingress timeout settings (default is often 60s; increase to 86400s for SSE)
+2. Verify firewall/NAT isn't closing idle connections
+3. Use a keep-alive mechanism in your MCP client
+
+---
+
+## Next Steps
+
+<Card title="Tools Reference" icon="book" href="/mcp/tools-reference">
+  Explore all 55 MCP tools with detailed parameters, examples, and response schemas
+</Card>
+
+## Advanced Configuration
+
+### Custom MCP Server Port
+
+If you need to run the MCP server on a different port or path, configure via environment variables:
+
+```bash
+# docker-compose.yml
+services:
+  orchestrator:
+    environment:
+      - PORT=9000
+      - MCP_PATH=/api/mcp/sse
+```
+
+Then connect clients to `http://localhost:9000/api/mcp/sse`.
+
+### Multiple Mimir Instances
+
+To connect to multiple Mimir deployments (dev, staging, prod), add separate MCP server entries:
+
+```json
+{
+  "mcpServers": {
+    "mimir-dev": {
+      "type": "sse",
+      "url": "http://localhost:8080/mcp/sse"
+    },
+    "mimir-prod": {
+      "type": "sse",
+      "url": "https://mimir.prod.example.com/mcp/sse"
+    }
+  }
+}
+```
+
+Claude Code will automatically namespace tools by server (e.g., `mimir-dev/create_project`, `mimir-prod/create_project`).

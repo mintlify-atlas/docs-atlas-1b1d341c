@@ -1,0 +1,557 @@
+---
+title: 'ML Models'
+description: 'Machine learning model training and inference'
+icon: 'brain'
+---
+
+## Overview
+
+Mimir AIP provides ML model training and inference capabilities using ontology-defined features. Models are trained by workers on CIR data from storage backends and can be deployed for predictions in digital twins.
+
+**Supported model types:**
+- Decision Tree
+- Random Forest
+- Regression (Linear/Polynomial)
+- Neural Network
+
+## Model Structure
+
+```go pkg/models/mlmodel.go:32
+type MLModel struct {
+    ID                  string
+    ProjectID           string
+    OntologyID          string         // Defines features
+    Name                string
+    Description         string
+    Type                ModelType      // Model algorithm
+    Status              ModelStatus    // Training lifecycle
+    Version             string
+    IsRecommended       bool          // From recommendation engine
+    RecommendationScore int
+    TrainingConfig      *TrainingConfig
+    TrainingMetrics     *TrainingMetrics
+    ModelArtifactPath   string        // Trained model file
+    PerformanceMetrics  *PerformanceMetrics
+    Metadata            map[string]interface{}
+    CreatedAt           time.Time
+    UpdatedAt           time.Time
+    TrainedAt           *time.Time
+}
+```
+
+## Model Types
+
+<CardGroup cols={2}>
+  <Card title="Decision Tree" icon="tree">
+    Fast, interpretable classification. Best for small datasets and simple patterns.
+
+    **Use when:**
+    - Need explainable decisions
+    - Dataset is small (less than 1000 records)
+    - Features are categorical
+  </Card>
+
+  <Card title="Random Forest" icon="trees">
+    Ensemble method for robust predictions. Handles complex patterns and prevents overfitting.
+
+    **Use when:**
+    - Medium to large datasets
+    - Mix of categorical and numerical features
+    - Need high accuracy
+  </Card>
+
+  <Card title="Regression" icon="chart-line">
+    Linear or polynomial regression for continuous outputs.
+
+    **Use when:**
+    - Predicting numerical values
+    - Features are mostly numerical
+    - Linear relationships expected
+  </Card>
+
+  <Card title="Neural Network" icon="network-wired">
+    Deep learning for complex non-linear patterns.
+
+    **Use when:**
+    - Large datasets (more than 10,000 records)
+    - Complex non-linear relationships
+    - Unstructured data components
+  </Card>
+</CardGroup>
+
+## Model Recommendation
+
+Get automatic model type recommendations based on ontology and data:
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/recommend \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-uuid-1234",
+    "ontology_id": "ont-uuid-7890"
+  }'
+```
+
+**Response:**
+```json
+{
+  "recommended_type": "random_forest",
+  "score": 8,
+  "reasoning": "Random Forest recommended based on:\n- Complex ontology structure (15 entities)\n- High number of relationships between entities\n- Suitable dataset size (medium)\n- Significant categorical features present\n- Ensemble approach improves accuracy\n\nRecommendation score: 8",
+  "all_scores": {
+    "decision_tree": 5,
+    "random_forest": 8,
+    "regression": 3,
+    "neural_network": 6
+  },
+  "ontology_analysis": {
+    "num_entities": 15,
+    "num_attributes": 32,
+    "num_relationships": 24,
+    "numerical_ratio": 0.45,
+    "categorical_ratio": 0.55,
+    "complexity": "medium"
+  },
+  "data_analysis": {
+    "size": "medium",
+    "record_count": 5420,
+    "has_unstructured": false,
+    "feature_count": 18
+  }
+}
+```
+
+### Recommendation Algorithm
+
+```go pkg/mlmodel/recommendation.go:20
+func (re *RecommendationEngine) RecommendModelType(
+    ontology *models.Ontology,
+    dataSummary *models.DataAnalysis,
+) (*models.ModelRecommendation, error) {
+    // Initialize scores
+    scores := map[models.ModelType]int{
+        models.ModelTypeDecisionTree:  0,
+        models.ModelTypeRandomForest:  0,
+        models.ModelTypeRegression:    0,
+        models.ModelTypeNeuralNetwork: 0,
+    }
+    
+    // Score based on ontology complexity
+    if ontologyAnalysis.NumEntities < 10 {
+        scores[models.ModelTypeDecisionTree] += 2
+    } else {
+        scores[models.ModelTypeRandomForest] += 2
+        scores[models.ModelTypeNeuralNetwork] += 1
+    }
+    
+    // Score based on numerical ratio
+    if numericalRatio > 0.7 {
+        scores[models.ModelTypeRegression] += 3
+        scores[models.ModelTypeNeuralNetwork] += 1
+    }
+    
+    // Score based on data size
+    switch dataSummary.Size {
+    case "small":
+        scores[models.ModelTypeDecisionTree] += 2
+    case "medium":
+        scores[models.ModelTypeRandomForest] += 2
+    case "large":
+        scores[models.ModelTypeNeuralNetwork] += 3
+    }
+    
+    // Return highest scoring model
+    return selectBestModel(scores)
+}
+```
+
+## Creating a Model
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST http://localhost:8080/api/ml-models \
+      -H "Content-Type: application/json" \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "ontology_id": "ont-uuid-7890",
+        "name": "customer-churn-model",
+        "description": "Predict customer churn probability",
+        "type": "random_forest",
+        "training_config": {
+          "train_test_split": 0.8,
+          "random_seed": 42,
+          "max_iterations": 100,
+          "hyperparameters": {
+            "n_estimators": 100,
+            "max_depth": 10
+          }
+        }
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Response">
+    ```json
+    {
+      "id": "model-uuid-1111",
+      "project_id": "proj-uuid-1234",
+      "ontology_id": "ont-uuid-7890",
+      "name": "customer-churn-model",
+      "description": "Predict customer churn probability",
+      "type": "random_forest",
+      "status": "draft",
+      "version": "1.0",
+      "training_config": {
+        "train_test_split": 0.8,
+        "random_seed": 42,
+        "max_iterations": 100,
+        "hyperparameters": {...}
+      },
+      "created_at": "2026-03-01T10:00:00Z",
+      "updated_at": "2026-03-01T10:00:00Z"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Training Configuration
+
+```go pkg/models/mlmodel.go:54
+type TrainingConfig struct {
+    TrainTestSplit      float64                // 0.8 = 80% train, 20% test
+    RandomSeed          int                    // For reproducibility
+    MaxIterations       int                    // Training epochs
+    LearningRate        float64                // Gradient descent step size
+    BatchSize           int                    // Mini-batch size
+    EarlyStoppingRounds int                    // Stop if no improvement
+    Hyperparameters     map[string]interface{} // Model-specific params
+}
+```
+
+### Model-Specific Hyperparameters
+
+<Tabs>
+  <Tab title="Decision Tree">
+    ```json
+    {
+      "hyperparameters": {
+        "max_depth": 10,
+        "min_samples_split": 2,
+        "min_samples_leaf": 1
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Random Forest">
+    ```json
+    {
+      "hyperparameters": {
+        "n_estimators": 100,
+        "max_depth": 10,
+        "min_samples_split": 2,
+        "max_features": "sqrt"
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Neural Network">
+    ```json
+    {
+      "learning_rate": 0.001,
+      "batch_size": 32,
+      "hyperparameters": {
+        "hidden_layers": [64, 32, 16],
+        "activation": "relu",
+        "dropout_rate": 0.2
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Training a Model
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/model-uuid-1111/train \
+  -H "Content-Type: application/json" \
+  -d '{
+    "storage_ids": ["storage-uuid-1", "storage-uuid-2"],
+    "training_config": {
+      "train_test_split": 0.8,
+      "random_seed": 42
+    }
+  }'
+```
+
+**Training process:**
+
+1. Orchestrator enqueues training work task
+2. Worker fetches model definition and ontology
+3. Worker retrieves CIR data from specified storage
+4. Features extracted based on ontology properties
+5. Data split into train/test sets
+6. Model trained with hyperparameters
+7. Performance metrics calculated on test set
+8. Model artifact saved to persistent storage
+9. Orchestrator updated with metrics and status
+
+```go pkg/mlmodel/service.go:246
+func (s *Service) StartTraining(req *models.ModelTrainingRequest) (*models.MLModel, error) {
+    model, err := s.store.GetMLModel(req.ModelID)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Update status
+    model.Status = models.ModelStatusTraining
+    model.UpdatedAt = time.Now().UTC()
+    s.store.SaveMLModel(model)
+    
+    // Submit training job
+    workTask := &models.WorkTask{
+        ID:       uuid.New().String(),
+        Type:     models.WorkTaskTypeMLTraining,
+        Priority: 5,
+        Status:   models.WorkTaskStatusQueued,
+        TaskSpec: models.TaskSpec{
+            ModelID:   model.ID,
+            ProjectID: model.ProjectID,
+            Parameters: map[string]any{
+                "model_id":    model.ID,
+                "ontology_id": model.OntologyID,
+                "storage_ids": req.StorageIDs,
+                "config":      model.TrainingConfig,
+            },
+        },
+        ResourceRequirements: models.ResourceRequirements{
+            CPU:    "2000m",
+            Memory: "4Gi",
+        },
+    }
+    
+    return model, s.queue.Enqueue(workTask)
+}
+```
+
+## Model Status
+
+<CardGroup cols={2}>
+  <Card title="draft" icon="pen">
+    Model created but not trained.
+  </Card>
+  <Card title="training" icon="spinner">
+    Training job in progress.
+  </Card>
+  <Card title="trained" icon="check">
+    Training completed successfully. Ready for inference.
+  </Card>
+  <Card title="failed" icon="xmark">
+    Training failed. Check error message.
+  </Card>
+  <Card title="degraded" icon="triangle-exclamation">
+    Performance below threshold after monitoring.
+  </Card>
+  <Card title="deprecated" icon="ban">
+    Manually marked as obsolete.
+  </Card>
+</CardGroup>
+
+## Performance Metrics
+
+### Classification Models
+
+```go pkg/models/mlmodel.go:85
+type PerformanceMetrics struct {
+    Accuracy         float64            // Overall accuracy
+    Precision        float64            // True positives / (TP + FP)
+    Recall           float64            // True positives / (TP + FN)
+    F1Score          float64            // Harmonic mean of precision and recall
+    ConfusionMatrix  [][]int            // [[TN, FP], [FN, TP]]
+    FeatureImportance map[string]float64 // Feature → importance score
+}
+```
+
+### Regression Models
+
+```go
+type PerformanceMetrics struct {
+    RMSE    float64 // Root Mean Squared Error
+    MAE     float64 // Mean Absolute Error
+    R2Score float64 // R-squared (coefficient of determination)
+}
+```
+
+**Example metrics:**
+```json
+{
+  "accuracy": 0.87,
+  "precision": 0.85,
+  "recall": 0.89,
+  "f1_score": 0.87,
+  "confusion_matrix": [[450, 50], [30, 470]],
+  "feature_importance": {
+    "age": 0.25,
+    "total_orders": 0.22,
+    "avg_order_value": 0.18,
+    "days_since_last_order": 0.15
+  }
+}
+```
+
+## Running Inference
+
+Once trained, models can generate predictions:
+
+```bash
+curl -X POST http://localhost:8080/api/ml-models/model-uuid-1111/infer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "age": 35,
+      "total_orders": 24,
+      "avg_order_value": 85.50,
+      "days_since_last_order": 45
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "prediction": 0.73,
+  "confidence": 0.85,
+  "feature_contributions": {
+    "age": 0.15,
+    "total_orders": 0.20,
+    "avg_order_value": 0.18,
+    "days_since_last_order": 0.20
+  }
+}
+```
+
+<Info>
+Inference is also available through digital twins, which automatically enriches input features from related entities.
+</Info>
+
+## Training Metrics
+
+Monitor training progress:
+
+```go pkg/models/mlmodel.go:65
+type TrainingMetrics struct {
+    Epoch              int
+    TrainingLoss       float64
+    ValidationLoss     float64
+    TrainingAccuracy   float64
+    ValidationAccuracy float64
+    LearningCurve      []LearningCurvePoint
+}
+
+type LearningCurvePoint struct {
+    Epoch              int
+    TrainingLoss       float64
+    ValidationLoss     float64
+    TrainingAccuracy   float64
+    ValidationAccuracy float64
+}
+```
+
+**Example learning curve:**
+```json
+{
+  "epoch": 50,
+  "training_loss": 0.15,
+  "validation_loss": 0.18,
+  "training_accuracy": 0.92,
+  "validation_accuracy": 0.89,
+  "learning_curve": [
+    {"epoch": 1, "training_loss": 0.65, "validation_loss": 0.67, ...},
+    {"epoch": 10, "training_loss": 0.35, "validation_loss": 0.38, ...},
+    {"epoch": 50, "training_loss": 0.15, "validation_loss": 0.18, ...}
+  ]
+}
+```
+
+## Listing Models
+
+```bash
+# All models for a project
+curl http://localhost:8080/api/projects/proj-uuid-1234/ml-models
+
+# All models (admin)
+curl http://localhost:8080/api/ml-models
+```
+
+## Updating a Model
+
+```bash
+curl -X PATCH http://localhost:8080/api/ml-models/model-uuid-1111 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated churn prediction model",
+    "status": "trained"
+  }'
+```
+
+## Deleting a Model
+
+```bash
+curl -X DELETE http://localhost:8080/api/ml-models/model-uuid-1111
+```
+
+<Warning>
+Deleting a model removes its metadata and artifact file. Digital twins using this model will fail predictions.
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Feature Engineering" icon="wrench">
+    Design ontologies with ML in mind:
+    - Include relevant numerical features
+    - Normalize feature scales
+    - Handle missing values
+    - Encode categorical variables
+  </Accordion>
+
+  <Accordion title="Data Quality" icon="shield-check">
+    Ensure training data quality:
+    - Remove duplicates
+    - Handle outliers
+    - Balance class distributions
+    - Validate data types
+  </Accordion>
+
+  <Accordion title="Model Versioning" icon="code-branch">
+    Track model versions:
+    - Increment version on retraining
+    - Keep old models for comparison
+    - Document training parameters
+    - Monitor performance drift
+  </Accordion>
+
+  <Accordion title="Cross-Validation" icon="arrows-split-up-and-left">
+    Use appropriate train/test splits:
+    - 80/20 for medium datasets
+    - 90/10 for large datasets
+    - K-fold for small datasets
+    - Time-based splits for time series
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Digital Twins" icon="clone" href="/features/digital-twins">
+    Use models for predictions in digital twins.
+  </Card>
+  <Card title="Ontologies" icon="sitemap" href="/features/ontologies">
+    Design ontologies for effective feature engineering.
+  </Card>
+  <Card title="Storage" icon="database" href="/features/storage">
+    Prepare training data in storage backends.
+  </Card>
+</CardGroup>

@@ -1,0 +1,592 @@
+---
+title: Monitoring and Observability
+description: Monitor, debug, and troubleshoot Mimir AIP deployments
+---
+
+# Monitoring and Observability
+
+This guide covers monitoring, logging, and debugging strategies for Mimir AIP deployments, including metrics collection, log analysis, and troubleshooting common issues.
+
+## Architecture Overview
+
+Mimir AIP consists of three main components:
+
+1. **Orchestrator** - API server, metadata store, worker scheduler
+2. **Workers** - Kubernetes Jobs that execute pipelines and ML tasks
+3. **Storage Plugins** - Dynamically loaded storage backends
+
+Each component produces logs and metrics that provide visibility into system health and performance.
+
+## Logging
+
+### Log Locations
+
+**Orchestrator Logs**:
+```bash
+# View orchestrator logs
+kubectl logs -n mimir-aip deployment/orchestrator
+
+# Follow logs in real-time
+kubectl logs -n mimir-aip deployment/orchestrator -f
+
+# Last 100 lines
+kubectl logs -n mimir-aip deployment/orchestrator --tail=100
+```
+
+**Worker Logs**:
+```bash
+# List all worker pods
+kubectl get pods -n mimir-aip -l app=mimir-worker
+
+# View specific worker logs
+kubectl logs -n mimir-aip mimir-worker-abc123
+
+# View all worker logs
+kubectl logs -n mimir-aip -l app=mimir-worker --tail=50
+```
+
+**Frontend Logs**:
+```bash
+kubectl logs -n mimir-aip deployment/frontend
+```
+
+### Log Levels
+
+Configure log verbosity in Helm values:
+
+```yaml
+orchestrator:
+  environment: production  # or development
+  logLevel: info          # debug, info, warn, error
+```
+
+**Log Level Meanings**:
+- `debug` - Detailed execution traces, plugin loading, queue operations
+- `info` - Normal operations, task start/complete, configuration changes
+- `warn` - Recoverable errors, retry attempts, deprecated API usage
+- `error` - Critical failures, unhandled exceptions, fatal errors
+
+### Structured Logging
+
+Logs follow a structured format for easy parsing:
+
+```
+2024-01-15T10:30:45Z INFO  [orchestrator] Pipeline execution started pipeline_id=pipe-123 project_id=proj-456
+2024-01-15T10:30:47Z INFO  [worker] Executing step step_name=transform plugin=builtin
+2024-01-15T10:30:50Z INFO  [worker] Pipeline execution completed pipeline_id=pipe-123 duration=5.2s
+```
+
+### Key Log Patterns
+
+**Worker Lifecycle**:
+```bash
+# Worker spawn
+kubectl logs deployment/orchestrator | grep "Spawning worker"
+
+# Worker completion
+kubectl logs -l app=mimir-worker | grep "completed successfully"
+
+# Worker failures
+kubectl logs -l app=mimir-worker | grep "failed"
+```
+
+**Plugin Operations**:
+```bash
+# Plugin installation
+kubectl logs deployment/orchestrator | grep "plugin loader"
+
+# Plugin compilation
+kubectl logs -l app=mimir-worker | grep "Compiling plugin"
+
+# Plugin execution
+kubectl logs -l app=mimir-worker | grep "Loaded custom plugin"
+```
+
+**Storage Operations**:
+```bash
+# Storage initialization
+kubectl logs deployment/orchestrator | grep "Initialized storage"
+
+# CIR operations
+kubectl logs deployment/orchestrator | grep "Stored CIR data"
+```
+
+## Metrics Collection
+
+### Built-in Metrics
+
+Mimir AIP exposes operational metrics through its API and logs:
+
+**Queue Metrics**:
+```bash
+# Current queue length
+curl http://localhost:8080/api/worktasks/queue/length
+
+# Queued tasks
+curl http://localhost:8080/api/worktasks?status=queued | jq 'length'
+
+# Executing tasks
+curl http://localhost:8080/api/worktasks?status=executing | jq 'length'
+```
+
+**Worker Metrics**:
+```bash
+# Active workers
+kubectl get pods -n mimir-aip -l app=mimir-worker --field-selector=status.phase=Running
+
+# Completed workers
+kubectl get pods -n mimir-aip -l app=mimir-worker --field-selector=status.phase=Succeeded
+
+# Failed workers
+kubectl get pods -n mimir-aip -l app=mimir-worker --field-selector=status.phase=Failed
+```
+
+**Task Metrics**:
+```bash
+# Task statistics
+curl http://localhost:8080/api/worktasks | jq 'group_by(.status) | map({status: .[0].status, count: length})'
+
+# Average task duration
+kubectl logs -l app=mimir-worker | grep "completed" | awk '{print $NF}' | sed 's/ms//' | awk '{sum+=$1; count++} END {print sum/count}'
+```
+
+### Kubernetes Resource Metrics
+
+**Pod Resource Usage**:
+```bash
+# Current CPU and memory usage
+kubectl top pods -n mimir-aip
+
+# Watch resource usage
+watch kubectl top pods -n mimir-aip
+
+# Node resource usage
+kubectl top nodes
+```
+
+**Resource Requests vs Limits**:
+```bash
+# View resource configuration
+kubectl describe pod -n mimir-aip orchestrator-xyz
+
+# Check for OOMKilled pods
+kubectl get pods -n mimir-aip -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].lastState.terminated.reason}{"\n"}{end}' | grep OOMKilled
+```
+
+### Prometheus Integration
+
+For production deployments, integrate with Prometheus for comprehensive metrics:
+
+#### Prometheus ServiceMonitor
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mimir-aip
+  namespace: mimir-aip
+spec:
+  selector:
+    matchLabels:
+      app: orchestrator
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+```
+
+#### Key Metrics to Track
+
+**Queue Metrics**:
+- `mimir_queue_length` - Current task queue depth
+- `mimir_queue_enqueue_rate` - Tasks added per second
+- `mimir_queue_dequeue_rate` - Tasks processed per second
+- `mimir_queue_wait_time_seconds` - Time tasks spend in queue
+
+**Worker Metrics**:
+- `mimir_workers_active` - Currently running workers
+- `mimir_workers_spawned_total` - Total workers spawned
+- `mimir_workers_failed_total` - Failed worker count
+- `mimir_worker_duration_seconds` - Worker execution time histogram
+
+**Task Metrics**:
+- `mimir_tasks_total{status=completed}` - Completed tasks counter
+- `mimir_tasks_total{status=failed}` - Failed tasks counter
+- `mimir_task_retries_total` - Task retry counter
+- `mimir_task_duration_seconds` - Task execution time histogram
+
+**Storage Metrics**:
+- `mimir_storage_operations_total{operation=store}` - Store operations counter
+- `mimir_storage_operations_total{operation=retrieve}` - Retrieve operations counter
+- `mimir_storage_latency_seconds` - Storage operation latency histogram
+- `mimir_storage_errors_total` - Storage error counter
+
+#### Sample Prometheus Queries
+
+```promql
+# Average queue length over 5 minutes
+avg_over_time(mimir_queue_length[5m])
+
+# Worker spawn rate (per minute)
+rate(mimir_workers_spawned_total[1m]) * 60
+
+# Task failure rate
+rate(mimir_tasks_total{status="failed"}[5m]) / rate(mimir_tasks_total[5m])
+
+# 95th percentile task duration
+histogram_quantile(0.95, mimir_task_duration_seconds_bucket)
+
+# Storage operation latency by operation type
+avg(rate(mimir_storage_latency_seconds_sum[5m])) by (operation) / avg(rate(mimir_storage_latency_seconds_count[5m])) by (operation)
+```
+
+### Grafana Dashboards
+
+Create Grafana dashboards to visualize metrics:
+
+**Mimir AIP Overview Dashboard**:
+- Queue depth over time (line graph)
+- Active workers (gauge)
+- Task completion rate (graph)
+- Task failure rate (graph)
+- Worker resource usage (heatmap)
+
+**Pipeline Performance Dashboard**:
+- Pipeline execution time by pipeline ID
+- Step execution time breakdown
+- Plugin performance comparison
+- Error rate by pipeline
+
+**Storage Performance Dashboard**:
+- Storage operation latency by operation type
+- Storage throughput (ops/sec)
+- Storage error rate
+- Connection pool utilization
+
+## Health Checks
+
+### Orchestrator Health
+
+```bash
+# Check orchestrator endpoint
+curl http://localhost:8080/health
+
+# Check pod status
+kubectl get pods -n mimir-aip -l app=orchestrator
+
+# Check for restarts
+kubectl get pods -n mimir-aip -l app=orchestrator -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
+```
+
+### Storage Health
+
+```bash
+# List storage configurations
+curl http://localhost:8080/api/storage/configs
+
+# Check storage health
+curl http://localhost:8080/api/storage/${STORAGE_ID}/health
+
+# Test storage operation
+curl -X POST http://localhost:8080/api/storage/store \
+  -H "Content-Type: application/json" \
+  -d '{
+    "storage_id": "test-storage",
+    "cir_data": {
+      "version": "1.0",
+      "data": {"test": "health_check"}
+    }
+  }'
+```
+
+### Worker Health
+
+```bash
+# Check for stuck workers (running > 1 hour)
+kubectl get pods -n mimir-aip -l app=mimir-worker -o json | \
+  jq -r '.items[] | select(.status.phase=="Running" and (now - (.status.startTime | fromdateiso8601) > 3600)) | .metadata.name'
+
+# Check for failed workers
+kubectl get pods -n mimir-aip -l app=mimir-worker --field-selector=status.phase=Failed
+
+# View failed worker logs
+kubectl logs -n mimir-aip $(kubectl get pods -n mimir-aip -l app=mimir-worker --field-selector=status.phase=Failed -o jsonpath='{.items[0].metadata.name}')
+```
+
+## Debugging
+
+### Common Issues
+
+#### Issue: Tasks Stuck in Queue
+
+**Symptoms**:
+- Queue length increasing
+- No workers spawning
+- `kubectl get pods` shows no worker pods
+
+**Diagnosis**:
+```bash
+# Check orchestrator logs
+kubectl logs deployment/orchestrator | grep -i "worker"
+
+# Check RBAC permissions
+kubectl auth can-i create jobs --as=system:serviceaccount:mimir-aip:mimir-orchestrator -n mimir-aip
+
+# Verify worker namespace
+kubectl get namespace mimir-aip
+```
+
+**Solution**:
+- Verify `rbac.create: true` in Helm values
+- Check orchestrator has permission to create Jobs
+- Ensure `workerNamespace` matches deployment namespace
+
+#### Issue: Workers Failing Immediately
+
+**Symptoms**:
+- Workers spawn but fail quickly
+- Status shows `Error` or `CrashLoopBackOff`
+
+**Diagnosis**:
+```bash
+# View worker logs
+kubectl logs -n mimir-aip mimir-worker-abc123
+
+# Check for plugin compilation errors
+kubectl logs -n mimir-aip mimir-worker-abc123 | grep "plugin"
+
+# Check for missing environment variables
+kubectl describe pod -n mimir-aip mimir-worker-abc123 | grep -A5 "Environment"
+```
+
+**Common Causes**:
+- Plugin compilation failure (missing dependencies)
+- Orchestrator URL unreachable from worker
+- Missing WORKTASK_ID or WORKTASK_TYPE environment variables
+- Insufficient resources (OOMKilled)
+
+**Solution**:
+```bash
+# Check orchestrator service
+kubectl get svc -n mimir-aip orchestrator
+
+# Test connectivity from worker
+kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl http://orchestrator.mimir-aip.svc.cluster.local:8080/health
+
+# Increase worker memory if OOMKilled
+helm upgrade mimir-aip ./helm/mimir-aip -f values.yaml \
+  --set orchestrator.resources.limits.memory=4Gi
+```
+
+#### Issue: Plugin Compilation Failures
+
+**Symptoms**:
+- Worker logs show "compilation failed"
+- Pipeline execution fails at plugin action
+
+**Diagnosis**:
+```bash
+# View compilation output
+kubectl logs -n mimir-aip mimir-worker-xyz | grep -A20 "Compiling plugin"
+
+# Check plugin cache
+kubectl exec -n mimir-aip mimir-worker-xyz -- ls -lh /tmp/plugins
+```
+
+**Common Causes**:
+- Plugin has incompatible Go version
+- Missing required packages in plugin go.mod
+- Plugin doesn't export `Plugin` symbol
+- CGO_ENABLED=0 (should be 1)
+
+**Solution**:
+- Verify plugin.yaml exists and is valid
+- Ensure plugin exports `var Plugin MyPlugin`
+- Test plugin compilation locally:
+  ```bash
+  git clone https://github.com/yourorg/plugin
+  cd plugin
+  go build -buildmode=plugin -o test.so
+  ```
+
+#### Issue: Storage Operations Timing Out
+
+**Symptoms**:
+- Store/retrieve operations fail with timeout
+- High storage latency
+
+**Diagnosis**:
+```bash
+# Check storage plugin logs
+kubectl logs deployment/orchestrator | grep "storage"
+
+# Test storage connectivity
+curl -X POST http://localhost:8080/api/storage/${STORAGE_ID}/health
+
+# Check storage backend health
+# Example for PostgreSQL:
+kubectl run -it --rm psql --image=postgres:15 --restart=Never -- psql -h postgres.example.com -U mimir -c "SELECT 1"
+```
+
+**Solution**:
+- Verify storage credentials in config
+- Check network connectivity to storage backend
+- Increase timeout in storage plugin configuration
+- Add connection pooling to storage plugin
+
+### Interactive Debugging
+
+**Debug Worker Locally**:
+```bash
+# Get task details
+TASK_ID="task-abc123"
+curl http://localhost:8080/api/worktasks/${TASK_ID} > task.json
+
+# Run worker locally with debugger
+export WORKTASK_ID=${TASK_ID}
+export WORKTASK_TYPE=pipeline_execution
+export ORCHESTRATOR_URL=http://localhost:8080
+go run cmd/worker/main.go
+```
+
+**Exec into Running Worker**:
+```bash
+# List active workers
+kubectl get pods -n mimir-aip -l app=mimir-worker --field-selector=status.phase=Running
+
+# Exec into worker
+kubectl exec -it -n mimir-aip mimir-worker-xyz -- /bin/sh
+
+# Inside worker pod:
+ps aux | grep worker
+ls -l /tmp/plugins
+env | grep WORKTASK
+```
+
+**Debug Orchestrator**:
+```bash
+# Port forward to orchestrator
+kubectl port-forward -n mimir-aip deployment/orchestrator 8080:8080
+
+# Make API calls with verbose output
+curl -v http://localhost:8080/api/worktasks/queue/length
+
+# Check SQLite database
+kubectl exec -it -n mimir-aip deployment/orchestrator -- sqlite3 /app/data/metadata.db "SELECT * FROM worktasks LIMIT 10;"
+```
+
+## Alerting
+
+### Recommended Alerts
+
+**Critical Alerts**:
+
+```yaml
+# Queue depth exceeds capacity
+alert: QueueDepthHigh
+expr: mimir_queue_length > 100
+for: 5m
+annotations:
+  summary: Task queue is backing up
+  description: Queue has {{ $value }} tasks pending
+
+# High worker failure rate
+alert: WorkerFailureRateHigh
+expr: rate(mimir_workers_failed_total[5m]) > 0.1
+for: 5m
+annotations:
+  summary: Workers are failing frequently
+  description: Worker failure rate is {{ $value }}/sec
+
+# Storage operations failing
+alert: StorageErrorRateHigh
+expr: rate(mimir_storage_errors_total[5m]) / rate(mimir_storage_operations_total[5m]) > 0.05
+for: 5m
+annotations:
+  summary: Storage operations are failing
+  description: Storage error rate is {{ $value | humanizePercentage }}
+```
+
+**Warning Alerts**:
+
+```yaml
+# No workers available
+alert: NoWorkersAvailable
+expr: mimir_workers_active == 0 and mimir_queue_length > 0
+for: 2m
+annotations:
+  summary: No workers processing tasks
+  description: Queue has {{ query "mimir_queue_length" }} tasks but no active workers
+
+# Slow task execution
+alert: TaskExecutionSlow
+expr: histogram_quantile(0.95, mimir_task_duration_seconds_bucket) > 300
+for: 10m
+annotations:
+  summary: Tasks are taking too long
+  description: 95th percentile task duration is {{ $value }}s
+```
+
+## Troubleshooting Checklist
+
+When investigating issues:
+
+1. **Check Component Status**
+   - [ ] Orchestrator pod is Running
+   - [ ] Frontend pod is Running (if enabled)
+   - [ ] Storage backends are accessible
+
+2. **Review Recent Logs**
+   - [ ] Orchestrator logs for errors
+   - [ ] Worker logs for failures
+   - [ ] Storage plugin initialization logs
+
+3. **Verify Configuration**
+   - [ ] Helm values are correct
+   - [ ] Storage configs have valid credentials
+   - [ ] Plugin repositories are accessible
+
+4. **Check Resources**
+   - [ ] Pods not OOMKilled
+   - [ ] Nodes have available capacity
+   - [ ] PVC has sufficient space
+
+5. **Test Connectivity**
+   - [ ] Workers can reach orchestrator
+   - [ ] Orchestrator can reach storage backends
+   - [ ] Frontend can reach orchestrator (if applicable)
+
+## Best Practices
+
+1. **Enable Structured Logging**
+   - Use JSON log format for easier parsing
+   - Include correlation IDs (task_id, pipeline_id)
+   - Log at appropriate levels
+
+2. **Set Up Centralized Logging**
+   - Use Fluentd/Fluent Bit to collect logs
+   - Forward to Elasticsearch, Loki, or CloudWatch
+   - Implement log retention policies
+
+3. **Monitor Key Metrics**
+   - Track queue depth and wait time
+   - Monitor worker success/failure rates
+   - Measure storage operation latency
+   - Alert on anomalies
+
+4. **Implement Health Checks**
+   - Configure liveness and readiness probes
+   - Test storage health periodically
+   - Monitor plugin compilation success
+
+5. **Maintain Observability**
+   - Keep logs for minimum 7 days
+   - Export metrics to long-term storage
+   - Document alert runbooks
+   - Review metrics regularly
+
+6. **Debug Proactively**
+   - Test deployments in staging first
+   - Validate plugins before production use
+   - Implement canary deployments for updates
+   - Keep worker image versions consistent

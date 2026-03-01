@@ -1,0 +1,780 @@
+---
+title: 'CIR Format'
+description: 'Common Internal Representation format specification'
+icon: 'file-code'
+---
+
+## Overview
+
+The **Common Internal Representation (CIR)** is the normalized data format used throughout Mimir AIP. Every piece of data flowing through the platform — whether ingested from APIs, databases, files, or streams — is converted to CIR format before storage and processing.
+
+CIR provides:
+- **Provenance tracking**: Know where data came from and when
+- **Format independence**: Work with data regardless of original format
+- **Schema inference**: Automatically detect data structure
+- **Quality metrics**: Track data quality indicators
+- **Consistency**: Unified interface across all storage backends
+
+## Structure
+
+A CIR object consists of three main blocks:
+
+<CardGroup cols={3}>
+  <Card title="Source" icon="link">
+    Provenance information — where the data came from, when it was ingested, and in what format.
+  </Card>
+  <Card title="Data" icon="database">
+    The actual payload — can be JSON objects, arrays, CSV records, text, or binary data.
+  </Card>
+  <Card title="Metadata" icon="tag">
+    Size, encoding, record count, inferred schema, and quality metrics.
+  </Card>
+</CardGroup>
+
+### Type Definition
+
+```go pkg/models/cir.go:35
+type CIR struct {
+    Version  string      `json:"version"`  // CIR schema version (currently "1.0")
+    Source   CIRSource   `json:"source"`   // Provenance block
+    Data     interface{} `json:"data"`     // Payload block
+    Metadata CIRMetadata `json:"metadata"` // Metadata block
+}
+```
+
+## Source Block
+
+The `Source` block captures provenance information for data lineage and debugging.
+
+```go pkg/models/cir.go:43
+type CIRSource struct {
+    Type       SourceType             `json:"type"`       // api, file, database, stream
+    URI        string                 `json:"uri"`        // Source identifier
+    Timestamp  time.Time              `json:"timestamp"`  // Ingestion timestamp
+    Format     DataFormat             `json:"format"`     // csv, json, xml, text, binary
+    Parameters map[string]interface{} `json:"parameters"` // Optional parameters
+}
+```
+
+### Source Types
+
+<AccordionGroup>
+  <Accordion title="api" icon="globe">
+    Data fetched from REST APIs or HTTP endpoints.
+
+    **URI format:** Full URL including query parameters
+
+    ```json
+    {
+      "type": "api",
+      "uri": "https://api.example.com/v1/customers?page=1",
+      "timestamp": "2026-03-01T12:34:56Z",
+      "format": "json",
+      "parameters": {
+        "method": "GET",
+        "headers": {"Authorization": "Bearer ***"},
+        "status_code": 200
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="file" icon="file">
+    Data loaded from local or remote files.
+
+    **URI format:** File path or file:// URL
+
+    ```json
+    {
+      "type": "file",
+      "uri": "/data/imports/customers_2026-03-01.csv",
+      "timestamp": "2026-03-01T09:15:00Z",
+      "format": "csv",
+      "parameters": {
+        "file_size": 1048576,
+        "mime_type": "text/csv"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="database" icon="database">
+    Data queried from SQL or NoSQL databases.
+
+    **URI format:** Connection string or database identifier
+
+    ```json
+    {
+      "type": "database",
+      "uri": "postgres://localhost:5432/production",
+      "timestamp": "2026-03-01T14:22:30Z",
+      "format": "json",
+      "parameters": {
+        "query": "SELECT * FROM customers WHERE active = true",
+        "rows_affected": 1523
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="stream" icon="rss">
+    Data ingested from real-time streams (Kafka, webhooks, etc.).
+
+    **URI format:** Stream endpoint or topic name
+
+    ```json
+    {
+      "type": "stream",
+      "uri": "kafka://broker:9092/events",
+      "timestamp": "2026-03-01T18:45:12Z",
+      "format": "json",
+      "parameters": {
+        "partition": 3,
+        "offset": 98234
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Data Formats
+
+| Format | Description | Example Use Cases |
+|--------|-------------|-------------------|
+| `csv` | Comma-separated values | Export files, spreadsheets |
+| `json` | JSON objects or arrays | API responses, config files |
+| `xml` | XML documents | SOAP APIs, legacy systems |
+| `text` | Plain text | Logs, notes, unstructured data |
+| `binary` | Binary data | Images, PDFs, arbitrary files |
+
+## Data Block
+
+The `Data` block contains the actual payload in its native structure.
+
+<Tabs>
+  <Tab title="JSON Object">
+    Single entity as a JSON object:
+
+    ```json
+    {
+      "version": "1.0",
+      "source": {
+        "type": "api",
+        "uri": "https://api.example.com/customer/123",
+        "timestamp": "2026-03-01T12:00:00Z",
+        "format": "json"
+      },
+      "data": {
+        "id": "123",
+        "name": "Acme Corp",
+        "email": "contact@acme.com",
+        "created_at": "2025-01-15"
+      },
+      "metadata": {
+        "size": 256,
+        "encoding": "utf-8",
+        "record_count": 1
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="JSON Array">
+    Multiple records as a JSON array:
+
+    ```json
+    {
+      "version": "1.0",
+      "source": {
+        "type": "database",
+        "uri": "postgres://localhost/prod",
+        "timestamp": "2026-03-01T12:00:00Z",
+        "format": "json"
+      },
+      "data": [
+        {"id": "1", "name": "Alice", "email": "alice@example.com"},
+        {"id": "2", "name": "Bob", "email": "bob@example.com"},
+        {"id": "3", "name": "Carol", "email": "carol@example.com"}
+      ],
+      "metadata": {
+        "size": 384,
+        "encoding": "utf-8",
+        "record_count": 3
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="CSV">
+    CSV data converted to array of objects:
+
+    ```json
+    {
+      "version": "1.0",
+      "source": {
+        "type": "file",
+        "uri": "/data/customers.csv",
+        "timestamp": "2026-03-01T12:00:00Z",
+        "format": "csv"
+      },
+      "data": [
+        {"id": "1", "name": "Alice", "status": "active"},
+        {"id": "2", "name": "Bob", "status": "inactive"}
+      ],
+      "metadata": {
+        "size": 512,
+        "encoding": "utf-8",
+        "record_count": 2,
+        "schema_inference": {
+          "columns": ["id", "name", "status"],
+          "types": ["string", "string", "string"]
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Text">
+    Plain text stored as a string:
+
+    ```json
+    {
+      "version": "1.0",
+      "source": {
+        "type": "file",
+        "uri": "/logs/app.log",
+        "timestamp": "2026-03-01T12:00:00Z",
+        "format": "text"
+      },
+      "data": "2026-03-01 ERROR: Connection timeout\n2026-03-01 INFO: Retry successful",
+      "metadata": {
+        "size": 82,
+        "encoding": "utf-8",
+        "record_count": 1,
+        "quality_metrics": {
+          "word_count": 12,
+          "sentence_count": 2,
+          "character_count": 82
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Metadata Block
+
+The `Metadata` block provides information about the data itself.
+
+```go pkg/models/cir.go:52
+type CIRMetadata struct {
+    Size            int64                  `json:"size"`                       // Bytes
+    Encoding        string                 `json:"encoding,omitempty"`         // e.g., "utf-8"
+    RecordCount     int                    `json:"record_count,omitempty"`     // Number of records
+    SchemaInference map[string]interface{} `json:"schema_inference,omitempty"` // Inferred structure
+    QualityMetrics  map[string]interface{} `json:"quality_metrics,omitempty"`  // Quality indicators
+}
+```
+
+### Schema Inference
+
+<Card title="Schema Inference" icon="chart-simple">
+  Automatically detected structure of the data payload.
+</Card>
+
+**For CSV data:**
+
+```json
+{
+  "schema_inference": {
+    "columns": ["id", "name", "email", "age"],
+    "types": ["string", "string", "string", "number"]
+  }
+}
+```
+
+**For JSON objects:**
+
+```json
+{
+  "schema_inference": {
+    "fields": [
+      {"name": "id", "type": "string", "nullable": false},
+      {"name": "name", "type": "string", "nullable": false},
+      {"name": "metadata", "type": "object", "nullable": true}
+    ]
+  }
+}
+```
+
+### Quality Metrics
+
+<Card title="Quality Metrics" icon="gauge">
+  Data quality indicators calculated during ingestion.
+</Card>
+
+**For structured data:**
+
+```json
+{
+  "quality_metrics": {
+    "completeness": 0.98,        // % of non-null values
+    "duplicate_count": 3,         // Number of duplicate records
+    "outlier_count": 5,           // Statistical outliers
+    "validation_errors": 0        // Schema validation errors
+  }
+}
+```
+
+**For text data:**
+
+```json
+{
+  "quality_metrics": {
+    "word_count": 1523,
+    "sentence_count": 87,
+    "character_count": 9842,
+    "readability_score": 62.3
+  }
+}
+```
+
+## Helper Functions
+
+Mimir provides utility functions for working with CIR objects.
+
+### Creating CIR Objects
+
+<CodeGroup>
+```go From JSON
+// pkg/storage/cir.go:64
+func CreateCIRFromJSON(jsonData string, sourceURI string, sourceType models.SourceType) (*models.CIR, error) {
+    var data interface{}
+    if err := json.Unmarshal([]byte(jsonData), &data); err != nil {
+        return nil, fmt.Errorf("failed to parse JSON: %w", err)
+    }
+    
+    cir := models.NewCIR(sourceType, sourceURI, models.DataFormatJSON, data)
+    cir.Metadata.Encoding = "utf-8"
+    
+    if arr, ok := data.([]interface{}); ok {
+        cir.Metadata.RecordCount = len(arr)
+    } else {
+        cir.Metadata.RecordCount = 1
+    }
+    
+    cir.UpdateSize()
+    return cir, nil
+}
+```
+
+```go From CSV
+// pkg/storage/cir.go:13
+func CreateCIRFromCSV(csvData string, sourceURI string) (*models.CIR, error) {
+    reader := csv.NewReader(strings.NewReader(csvData))
+    records, err := reader.ReadAll()
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse CSV: %w", err)
+    }
+    
+    headers := records[0]
+    dataRecords := records[1:]
+    
+    // Convert to array of maps
+    data := make([]map[string]interface{}, 0, len(dataRecords))
+    for _, record := range dataRecords {
+        row := make(map[string]interface{})
+        for i, header := range headers {
+            row[header] = record[i]
+        }
+        data = append(data, row)
+    }
+    
+    cir := models.NewCIR(models.SourceTypeFile, sourceURI, models.DataFormatCSV, data)
+    cir.Metadata.RecordCount = len(data)
+    cir.SetSchemaInference(map[string]interface{}{
+        "columns": headers,
+        "types":   inferColumnTypes(headers, data),
+    })
+    
+    cir.UpdateSize()
+    return cir, nil
+}
+```
+
+```go From Text
+// pkg/storage/cir.go:91
+func CreateCIRFromText(textData string, sourceURI string, sourceType models.SourceType) (*models.CIR, error) {
+    cir := models.NewCIR(sourceType, sourceURI, models.DataFormatText, textData)
+    cir.Metadata.Encoding = "utf-8"
+    cir.Metadata.RecordCount = 1
+    
+    qualityMetrics := map[string]interface{}{
+        "word_count":      len(strings.Fields(textData)),
+        "sentence_count":  strings.Count(textData, ".") + strings.Count(textData, "!"),
+        "character_count": len(textData),
+    }
+    cir.SetQualityMetrics(qualityMetrics)
+    
+    cir.UpdateSize()
+    return cir, nil
+}
+```
+</CodeGroup>
+
+### Accessing CIR Data
+
+<CodeGroup>
+```go As Map
+// pkg/models/cir.go:122
+func (c *CIR) GetDataAsMap() (map[string]interface{}, error) {
+    if m, ok := c.Data.(map[string]interface{}); ok {
+        return m, nil
+    }
+    
+    // Try JSON marshal/unmarshal
+    data, err := json.Marshal(c.Data)
+    if err != nil {
+        return nil, err
+    }
+    
+    var m map[string]interface{}
+    if err := json.Unmarshal(data, &m); err != nil {
+        return nil, err
+    }
+    
+    return m, nil
+}
+```
+
+```go As Array
+// pkg/models/cir.go:142
+func (c *CIR) GetDataAsArray() ([]interface{}, error) {
+    if arr, ok := c.Data.([]interface{}); ok {
+        return arr, nil
+    }
+    
+    // Try JSON marshal/unmarshal
+    data, err := json.Marshal(c.Data)
+    if err != nil {
+        return nil, err
+    }
+    
+    var arr []interface{}
+    if err := json.Unmarshal(data, &arr); err != nil {
+        return nil, err
+    }
+    
+    return arr, nil
+}
+```
+
+```go As String
+// pkg/models/cir.go:162
+func (c *CIR) GetDataAsString() string {
+    if s, ok := c.Data.(string); ok {
+        return s
+    }
+    
+    data, err := json.Marshal(c.Data)
+    if err != nil {
+        return fmt.Sprintf("%v", c.Data)
+    }
+    
+    return string(data)
+}
+```
+</CodeGroup>
+
+### Validation
+
+```go pkg/models/cir.go:78
+func (c *CIR) Validate() error {
+    if c.Version == "" {
+        return fmt.Errorf("CIR version is required")
+    }
+    if c.Source.Type == "" {
+        return fmt.Errorf("CIR source type is required")
+    }
+    if c.Source.URI == "" {
+        return fmt.Errorf("CIR source URI is required")
+    }
+    if c.Source.Format == "" {
+        return fmt.Errorf("CIR source format is required")
+    }
+    if c.Data == nil {
+        return fmt.Errorf("CIR data cannot be nil")
+    }
+    return nil
+}
+```
+
+## Querying CIR Data
+
+Storage plugins use `CIRQuery` to retrieve data from backends.
+
+```go pkg/models/storage.go:91
+type CIRQuery struct {
+    EntityType string          `json:"entity_type"`
+    Filters    []CIRCondition  `json:"filters"`
+    OrderBy    []OrderByClause `json:"order_by"`
+    Limit      int             `json:"limit"`
+    Offset     int             `json:"offset"`
+}
+
+type CIRCondition struct {
+    Attribute string      `json:"attribute"`
+    Operator  string      `json:"operator"` // eq, neq, gt, gte, lt, lte, in, like
+    Value     interface{} `json:"value"`
+}
+```
+
+<CodeGroup>
+```json Example: Filter by Status
+{
+  "entity_type": "Customer",
+  "filters": [
+    {
+      "attribute": "status",
+      "operator": "eq",
+      "value": "active"
+    }
+  ],
+  "order_by": [
+    {"attribute": "created_at", "direction": "desc"}
+  ],
+  "limit": 100
+}
+```
+
+```json Example: Range Query
+{
+  "entity_type": "Order",
+  "filters": [
+    {
+      "attribute": "total_amount",
+      "operator": "gte",
+      "value": 100
+    },
+    {
+      "attribute": "created_at",
+      "operator": "gt",
+      "value": "2026-01-01"
+    }
+  ],
+  "order_by": [
+    {"attribute": "total_amount", "direction": "desc"}
+  ]
+}
+```
+</CodeGroup>
+
+## Storage Operations
+
+All storage plugins implement the `StoragePlugin` interface:
+
+```go pkg/models/storage.go:28
+type StoragePlugin interface {
+    Initialize(config *PluginConfig) error
+    CreateSchema(ontology *OntologyDefinition) error
+    Store(cir *CIR) (*StorageResult, error)
+    Retrieve(query *CIRQuery) ([]*CIR, error)
+    Update(query *CIRQuery, updates *CIRUpdate) (*StorageResult, error)
+    Delete(query *CIRQuery) (*StorageResult, error)
+    GetMetadata() (*StorageMetadata, error)
+    HealthCheck() (bool, error)
+}
+```
+
+<AccordionGroup>
+  <Accordion title="Store" icon="floppy-disk">
+    Store a CIR object in the backend:
+
+    ```go
+    result, err := plugin.Store(cir)
+    if err != nil {
+        return fmt.Errorf("storage failed: %w", err)
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Retrieve" icon="download">
+    Query and retrieve CIR objects:
+
+    ```go
+    query := &models.CIRQuery{
+        EntityType: "Customer",
+        Filters: []models.CIRCondition{
+            {Attribute: "status", Operator: "eq", Value: "active"},
+        },
+        Limit: 100,
+    }
+    
+    cirs, err := plugin.Retrieve(query)
+    ```
+  </Accordion>
+
+  <Accordion title="Update" icon="pen">
+    Update existing CIR data:
+
+    ```go
+    update := &models.CIRUpdate{
+        Filters: []models.CIRCondition{
+            {Attribute: "id", Operator: "eq", Value: "123"},
+        },
+        Updates: map[string]interface{}{
+            "status": "inactive",
+            "updated_at": time.Now(),
+        },
+    }
+    
+    result, err := plugin.Update(query, update)
+    ```
+  </Accordion>
+
+  <Accordion title="Delete" icon="trash">
+    Delete CIR data matching query:
+
+    ```go
+    query := &models.CIRQuery{
+        Filters: []models.CIRCondition{
+            {Attribute: "created_at", Operator: "lt", Value: "2025-01-01"},
+        },
+    }
+    
+    result, err := plugin.Delete(query)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Always Set Source URI" icon="link">
+    Include a descriptive, unique URI for data lineage tracking. Use full URLs for APIs, absolute paths for files.
+  </Card>
+  <Card title="Preserve Original Format" icon="file-archive">
+    Store the original format in `Source.Format` even after conversion. This aids in debugging and re-processing.
+  </Card>
+  <Card title="Include Parameters" icon="sliders">
+    Store ingestion parameters (HTTP headers, query filters, pagination state) for reproducibility.
+  </Card>
+  <Card title="Calculate Quality Metrics" icon="chart-line">
+    Add quality metrics during ingestion to enable data quality monitoring and alerting.
+  </Card>
+  <Card title="Update Size" icon="ruler">
+    Call `cir.UpdateSize()` after modifying data to keep metadata accurate.
+  </Card>
+  <Card title="Validate Before Storage" icon="check">
+    Call `cir.Validate()` before passing to storage plugins to catch errors early.
+  </Card>
+</CardGroup>
+
+## Complete Example
+
+<CodeGroup>
+```json API Ingestion
+{
+  "version": "1.0",
+  "source": {
+    "type": "api",
+    "uri": "https://api.ecommerce.example/v1/orders?page=1&limit=50",
+    "timestamp": "2026-03-01T14:30:00Z",
+    "format": "json",
+    "parameters": {
+      "method": "GET",
+      "headers": {
+        "Authorization": "Bearer ***",
+        "User-Agent": "MimirAIP/1.0"
+      },
+      "status_code": 200,
+      "response_time_ms": 342
+    }
+  },
+  "data": [
+    {
+      "order_id": "ORD-2026-001",
+      "customer_id": "CUST-789",
+      "total": 149.99,
+      "status": "shipped",
+      "created_at": "2026-02-28T10:15:00Z"
+    },
+    {
+      "order_id": "ORD-2026-002",
+      "customer_id": "CUST-456",
+      "total": 79.50,
+      "status": "processing",
+      "created_at": "2026-03-01T09:22:00Z"
+    }
+  ],
+  "metadata": {
+    "size": 1024,
+    "encoding": "utf-8",
+    "record_count": 2,
+    "schema_inference": {
+      "fields": [
+        {"name": "order_id", "type": "string"},
+        {"name": "customer_id", "type": "string"},
+        {"name": "total", "type": "number"},
+        {"name": "status", "type": "string"},
+        {"name": "created_at", "type": "datetime"}
+      ]
+    },
+    "quality_metrics": {
+      "completeness": 1.0,
+      "duplicate_count": 0,
+      "validation_errors": 0
+    }
+  }
+}
+```
+
+```json Database Query
+{
+  "version": "1.0",
+  "source": {
+    "type": "database",
+    "uri": "postgres://prod-db.example.com:5432/analytics",
+    "timestamp": "2026-03-01T08:00:00Z",
+    "format": "json",
+    "parameters": {
+      "query": "SELECT * FROM customer_metrics WHERE updated_at > $1",
+      "params": ["2026-02-28"],
+      "rows_returned": 523,
+      "execution_time_ms": 89
+    }
+  },
+  "data": [
+    {
+      "customer_id": "CUST-123",
+      "lifetime_value": 2499.99,
+      "order_count": 12,
+      "last_order_date": "2026-02-15"
+    }
+  ],
+  "metadata": {
+    "size": 8192,
+    "encoding": "utf-8",
+    "record_count": 523,
+    "quality_metrics": {
+      "completeness": 0.97,
+      "outlier_count": 3
+    }
+  }
+}
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Storage Plugins" icon="plug" href="/guides/storage-plugins">
+    Learn how to implement custom storage plugins.
+  </Card>
+  <Card title="Pipeline Development" icon="code" href="/features/pipelines">
+    Create pipelines that produce and consume CIR data.
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/storage">
+    Explore storage API endpoints.
+  </Card>
+</CardGroup>

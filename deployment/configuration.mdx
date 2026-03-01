@@ -1,0 +1,513 @@
+---
+title: Configuration Reference
+description: Complete environment variable reference for Mimir AIP
+---
+
+All orchestrator configuration is supplied via environment variables. These can be set in `docker-compose.yaml`, Kubernetes ConfigMaps, or directly in your shell.
+
+## Core Settings
+
+### ENVIRONMENT
+
+**Type**: `string`  
+**Default**: `production`  
+**Values**: `production` | `development`
+
+Runtime environment label. Affects logging verbosity and data directory defaults.
+
+```bash
+ENVIRONMENT=development
+```
+
+### LOG_LEVEL
+
+**Type**: `string`  
+**Default**: `info`  
+**Values**: `debug` | `info` | `warn` | `error`
+
+Log verbosity level. Use `debug` for troubleshooting, `info` for production.
+
+```bash
+LOG_LEVEL=debug
+```
+
+### PORT
+
+**Type**: `string`  
+**Default**: `8080`
+
+HTTP port for the orchestrator API and MCP endpoints.
+
+```bash
+PORT=8080
+```
+
+### STORAGE_DIR
+
+**Type**: `string`  
+**Default**: `/app/data` (or `{ENVIRONMENT}-data` if set)
+
+Directory path for the SQLite database and file storage. Must be writable by the orchestrator process.
+
+```bash
+STORAGE_DIR=/app/data
+```
+
+<Note>
+In Kubernetes, this should match the PersistentVolumeClaim mount path.
+</Note>
+
+## Worker Pool Configuration
+
+These settings control how the orchestrator spawns and manages Kubernetes worker jobs.
+
+### MIN_WORKERS
+
+**Type**: `int`  
+**Default**: `1`
+
+Minimum number of concurrent worker jobs. The orchestrator maintains at least this many workers when tasks are queued.
+
+```bash
+MIN_WORKERS=1
+```
+
+### MAX_WORKERS
+
+**Type**: `int`  
+**Default**: `10` (Docker Compose) / `50` (config default)
+
+Maximum number of concurrent worker jobs across all clusters. Prevents resource exhaustion.
+
+```bash
+MAX_WORKERS=20
+```
+
+### QUEUE_THRESHOLD
+
+**Type**: `int`  
+**Default**: `5`
+
+Number of queued tasks before the orchestrator spawns an additional worker. Lower values spawn workers more aggressively.
+
+```bash
+QUEUE_THRESHOLD=5
+```
+
+### WORKER_NAMESPACE
+
+**Type**: `string`  
+**Default**: `mimir-aip` (Helm uses release namespace)
+
+Kubernetes namespace where worker jobs are created. Must match the orchestrator's namespace for RBAC permissions.
+
+```bash
+WORKER_NAMESPACE=mimir-aip
+```
+
+### WORKER_SERVICE_ACCOUNT
+
+**Type**: `string`  
+**Default**: `mimir-worker` (Helm) / `worker-service-account` (config)
+
+Kubernetes ServiceAccount assigned to worker jobs. Must have permissions to access required resources.
+
+```bash
+WORKER_SERVICE_ACCOUNT=mimir-worker
+```
+
+### WORKER_IMAGE
+
+**Type**: `string`  
+**Default**: `mimir-aip/worker:latest`
+
+Docker image used for worker jobs. Set this when using a custom registry or version.
+
+```bash
+WORKER_IMAGE=ghcr.io/mimir-aip/worker:0.1.1
+```
+
+### WORKER_CPU_LIMIT
+
+**Type**: `string`  
+**Default**: `2000m`
+
+Kubernetes CPU limit for worker pods. Format: millicores (e.g., `2000m` = 2 CPU cores).
+
+```bash
+WORKER_CPU_LIMIT=4000m
+```
+
+### WORKER_MEMORY_LIMIT
+
+**Type**: `string`  
+**Default**: `4Gi`
+
+Kubernetes memory limit for worker pods. Format: standard units (e.g., `4Gi`, `512Mi`).
+
+```bash
+WORKER_MEMORY_LIMIT=8Gi
+```
+
+## Multi-Cluster Configuration
+
+### CLUSTER_CONFIG_FILE
+
+**Type**: `string` (file path)  
+**Default**: `""` (empty = single in-cluster mode)
+
+Path to a YAML file defining multiple Kubernetes clusters for worker dispatch. When unset, the orchestrator uses only the in-cluster configuration.
+
+```bash
+CLUSTER_CONFIG_FILE=/etc/mimir/clusters.yaml
+```
+
+**Example `clusters.yaml`:**
+
+```yaml
+clusters:
+  - name: primary
+    kubeconfig: ""
+    namespace: mimir-aip
+    orchestratorURL: http://mimir-aip-orchestrator:8080
+    maxWorkers: 50
+    serviceAccount: mimir-worker
+
+  - name: site-b
+    kubeconfig: /etc/mimir/kubeconfigs/site-b.yaml
+    namespace: mimir-aip
+    orchestratorURL: http://192.168.10.5:8080
+    maxWorkers: 100
+    serviceAccount: mimir-worker
+```
+
+### WORKER_AUTH_TOKEN
+
+**Type**: `string` (Bearer token)  
+**Default**: `""` (empty = authentication disabled)
+
+Shared secret token for worker-to-orchestrator authentication. Workers include this as `Authorization: Bearer <token>` when calling `/api/worktasks/*` endpoints.
+
+```bash
+WORKER_AUTH_TOKEN=your-secure-random-token-here
+```
+
+<Warning>
+Keep this token secret. Store it in Kubernetes Secrets or a secure vault.
+</Warning>
+
+### ORCHESTRATOR_URL
+
+**Type**: `string` (URL)  
+**Default**: `http://localhost:8080`
+
+URL where workers can reach the orchestrator API. In Kubernetes, this is typically the orchestrator Service name.
+
+```bash
+ORCHESTRATOR_URL=http://mimir-aip-orchestrator:8080
+```
+
+## Advanced Worker Settings
+
+### WORKER_CONCURRENCY_LIMITS
+
+**Type**: `string` (JSON object)  
+**Default**: See below
+
+Per-task-type concurrency limits. Prevents a single task type from consuming all workers.
+
+```bash
+WORKER_CONCURRENCY_LIMITS='{"ml_training":5,"ml_inference":10,"pipeline_execution":20,"digital_twin_update":10}'
+```
+
+**Default limits:**
+
+```json
+{
+  "ml_training": 5,
+  "ml_inference": 10,
+  "pipeline_execution": 20,
+  "digital_twin_update": 10
+}
+```
+
+### JOB_TIMEOUT
+
+**Type**: `int` (seconds)  
+**Default**: `3600` (1 hour)
+
+Maximum execution time for a worker job before it's terminated.
+
+```bash
+JOB_TIMEOUT=7200
+```
+
+## Storage Plugin Configuration
+
+### STORAGE_PLUGIN_DIR
+
+**Type**: `string` (directory path)  
+**Default**: `/app/storage-plugins`
+
+Directory where external storage plugins are cached and loaded from. The orchestrator compiles and loads `.so` files from this location.
+
+```bash
+STORAGE_PLUGIN_DIR=/app/storage-plugins
+```
+
+## LLM Provider Configuration
+
+These settings enable LLM-powered features like ontology generation and semantic extraction.
+
+### LLM_ENABLED
+
+**Type**: `bool`  
+**Default**: `false`
+
+Enable LLM integration. When `false`, extraction uses statistical heuristics only.
+
+```bash
+LLM_ENABLED=true
+```
+
+### LLM_PROVIDER
+
+**Type**: `string`  
+**Default**: `""` (empty = LLM disabled)  
+**Values**: `openrouter` | `openai_compat` | custom provider name
+
+LLM provider to use. Must be registered in the orchestrator.
+
+```bash
+LLM_PROVIDER=openrouter
+```
+
+**Built-in providers:**
+
+| Provider | Description |
+|----------|-------------|
+| `openrouter` | [OpenRouter](https://openrouter.ai/) multi-model API |
+| `openai_compat` | OpenAI-compatible endpoints (e.g., vLLM, LocalAI) |
+
+### LLM_API_KEY
+
+**Type**: `string` (API key)  
+**Default**: `""`
+
+API key for the LLM provider. Required for `openrouter` and most `openai_compat` providers.
+
+```bash
+LLM_API_KEY=sk-or-v1-xxxxxxxxxxxx
+```
+
+<Warning>
+Store API keys in Kubernetes Secrets, not in plaintext ConfigMaps.
+</Warning>
+
+### LLM_BASE_URL
+
+**Type**: `string` (URL)  
+**Default**: `""`
+
+Base URL for `openai_compat` providers. Not required for `openrouter`.
+
+```bash
+LLM_BASE_URL=http://localhost:8000/v1
+```
+
+**Examples:**
+
+- vLLM: `http://vllm-server:8000/v1`
+- LocalAI: `http://localai:8080/v1`
+- OpenAI: `https://api.openai.com/v1`
+
+### LLM_MODEL
+
+**Type**: `string`  
+**Default**: Provider-specific (see below)
+
+Model identifier to use for LLM requests. When empty, defaults to:
+
+- `openrouter`: `openrouter/free`
+- `openai_compat`: `gpt-4o-mini`
+
+```bash
+LLM_MODEL=anthropic/claude-3.5-sonnet
+```
+
+### LLM_PROVIDER_DIR
+
+**Type**: `string` (directory path)  
+**Default**: `/app/llm-providers`
+
+Directory where external LLM provider plugins are cached and loaded from.
+
+```bash
+LLM_PROVIDER_DIR=/app/llm-providers
+```
+
+## Database Configuration
+
+### DATABASE_URL
+
+**Type**: `string` (connection string)  
+**Default**: `""` (uses SQLite in `STORAGE_DIR`)
+
+Database connection string. When empty, the orchestrator uses SQLite at `{STORAGE_DIR}/mimir.db`.
+
+```bash
+DATABASE_URL=sqlite:///app/data/mimir.db
+```
+
+<Note>
+Currently, only SQLite is supported. PostgreSQL support is planned.
+</Note>
+
+## Frontend Configuration
+
+### Frontend Environment Variables
+
+The frontend service uses the following variables:
+
+#### PORT
+
+**Type**: `string`  
+**Default**: `3000`
+
+HTTP port for the frontend server.
+
+```bash
+PORT=3000
+```
+
+#### API_URL
+
+**Type**: `string` (URL)  
+**Default**: `http://orchestrator:8080`
+
+URL of the orchestrator API. The frontend makes REST API calls to this endpoint.
+
+```bash
+API_URL=http://orchestrator:8080
+```
+
+In Docker Compose, this uses the service name `orchestrator`. In Kubernetes, use the Service DNS name:
+
+```bash
+API_URL=http://mimir-aip-orchestrator:8080
+```
+
+## Complete Example Configurations
+
+### Docker Compose (Development)
+
+```yaml docker-compose.yaml
+services:
+  orchestrator:
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+      - PORT=8080
+      - STORAGE_DIR=/app/data
+      - MIN_WORKERS=1
+      - MAX_WORKERS=5
+      - QUEUE_THRESHOLD=3
+      - LLM_ENABLED=true
+      - LLM_PROVIDER=openrouter
+      - LLM_API_KEY=${OPENROUTER_API_KEY}
+      - LLM_MODEL=openrouter/free
+```
+
+### Kubernetes ConfigMap (Production)
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mimir-aip-config
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "info"
+  PORT: "8080"
+  STORAGE_DIR: "/app/data"
+  MIN_WORKERS: "2"
+  MAX_WORKERS: "50"
+  QUEUE_THRESHOLD: "10"
+  WORKER_NAMESPACE: "mimir-aip"
+  WORKER_SERVICE_ACCOUNT: "mimir-worker"
+  WORKER_IMAGE: "ghcr.io/mimir-aip/worker:0.1.1"
+  WORKER_CPU_LIMIT: "4000m"
+  WORKER_MEMORY_LIMIT: "8Gi"
+  ORCHESTRATOR_URL: "http://mimir-aip-orchestrator:8080"
+  LLM_ENABLED: "true"
+  LLM_PROVIDER: "openrouter"
+  LLM_MODEL: "anthropic/claude-3.5-sonnet"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mimir-aip-secrets
+type: Opaque
+stringData:
+  LLM_API_KEY: "sk-or-v1-xxxxxxxxxxxx"
+  WORKER_AUTH_TOKEN: "your-secure-random-token"
+```
+
+### Kubernetes Deployment (with Secrets)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mimir-aip-orchestrator
+spec:
+  template:
+    spec:
+      containers:
+      - name: orchestrator
+        envFrom:
+        - configMapRef:
+            name: mimir-aip-config
+        env:
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mimir-aip-secrets
+              key: LLM_API_KEY
+        - name: WORKER_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: mimir-aip-secrets
+              key: WORKER_AUTH_TOKEN
+```
+
+## Environment Variable Precedence
+
+When the same variable is set in multiple locations:
+
+1. **Container `env`** (highest priority)
+2. **Container `envFrom`** (ConfigMap/Secret)
+3. **Dockerfile `ENV`**
+4. **Application defaults** (lowest priority)
+
+## Validation and Defaults
+
+The orchestrator validates configuration on startup:
+
+- Missing required directories are created automatically (e.g., `STORAGE_DIR`)
+- Invalid numeric values fall back to defaults
+- Invalid log levels fall back to `info`
+- Missing LLM configuration disables LLM features gracefully
+
+Check the orchestrator logs for configuration warnings:
+
+```bash
+docker compose logs orchestrator | grep -i "config\|warn"
+```
+
+## Next Steps
+
+- Deploy with [Docker Compose](/deployment/docker-compose) for local development
+- Deploy with [Kubernetes](/deployment/kubernetes) for production
+- Configure LLM provider API keys for enhanced ontology extraction
+- Set up [multi-cluster workers](/deployment/kubernetes#multi-cluster-worker-dispatch) for scalability

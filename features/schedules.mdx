@@ -1,0 +1,500 @@
+---
+title: 'Schedules'
+description: 'Cron-based pipeline automation'
+icon: 'clock'
+---
+
+## Overview
+
+Schedules enable automatic pipeline execution on recurring intervals using cron expressions. They're ideal for periodic data ingestion, model retraining, digital twin synchronization, and report generation.
+
+## Schedule Structure
+
+```go pkg/models/schedule.go
+type Schedule struct {
+    ID           string
+    ProjectID    string
+    Name         string
+    Description  string
+    CronSchedule string     // Cron expression
+    Pipelines    []string   // Pipeline IDs to execute
+    Enabled      bool
+    LastRun      *time.Time
+    NextRun      *time.Time
+    CreatedAt    time.Time
+    UpdatedAt    time.Time
+}
+```
+
+## Creating a Schedule
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST http://localhost:8080/api/schedules \
+      -H "Content-Type: application/json" \
+      -d '{
+        "project_id": "proj-uuid-1234",
+        "name": "daily-customer-import",
+        "description": "Import customer data every day at 2 AM",
+        "cron_schedule": "0 2 * * *",
+        "pipelines": ["pipe-uuid-5678", "pipe-uuid-9012"],
+        "enabled": true
+      }'
+    ```
+  </Tab>
+
+  <Tab title="Response">
+    ```json
+    {
+      "id": "sched-uuid-5555",
+      "project_id": "proj-uuid-1234",
+      "name": "daily-customer-import",
+      "description": "Import customer data every day at 2 AM",
+      "cron_schedule": "0 2 * * *",
+      "pipelines": ["pipe-uuid-5678", "pipe-uuid-9012"],
+      "enabled": true,
+      "next_run": "2026-03-02T02:00:00Z",
+      "created_at": "2026-03-01T10:00:00Z",
+      "updated_at": "2026-03-01T10:00:00Z"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Cron Syntax
+
+Mimir uses standard cron syntax with 5 fields:
+
+```
+┌───────────── minute (0 - 59)
+│ ┌───────────── hour (0 - 23)
+│ │ ┌───────────── day of month (1 - 31)
+│ │ │ ┌───────────── month (1 - 12)
+│ │ │ │ ┌───────────── day of week (0 - 6) (Sunday = 0)
+│ │ │ │ │
+* * * * *
+```
+
+### Common Patterns
+
+<Tabs>
+  <Tab title="Time-based">
+    ```bash
+    # Every hour
+    0 * * * *
+
+    # Every day at 2 AM
+    0 2 * * *
+
+    # Every day at 9:30 AM
+    30 9 * * *
+
+    # Twice daily (6 AM and 6 PM)
+    0 6,18 * * *
+    ```
+  </Tab>
+
+  <Tab title="Interval-based">
+    ```bash
+    # Every 15 minutes
+    */15 * * * *
+
+    # Every 30 minutes
+    */30 * * * *
+
+    # Every 2 hours
+    0 */2 * * *
+
+    # Every 4 hours
+    0 */4 * * *
+    ```
+  </Tab>
+
+  <Tab title="Day-based">
+    ```bash
+    # Weekdays at 9 AM (Monday-Friday)
+    0 9 * * 1-5
+
+    # Weekends at 10 AM (Saturday-Sunday)
+    0 10 * * 0,6
+
+    # First day of month at midnight
+    0 0 1 * *
+
+    # Last day of month at 11 PM
+    0 23 L * *
+    ```
+  </Tab>
+
+  <Tab title="Special">
+    ```bash
+    # Every minute
+    * * * * *
+
+    # Every Sunday at midnight
+    0 0 * * 0
+
+    # Quarterly (1st of Jan, Apr, Jul, Oct at midnight)
+    0 0 1 1,4,7,10 *
+
+    # Business hours (9 AM - 5 PM, weekdays)
+    0 9-17 * * 1-5
+    ```
+  </Tab>
+</Tabs>
+
+## Execution Process
+
+When a schedule triggers:
+
+1. Scheduler checks cron expression against current time
+2. For each pipeline in the schedule, a WorkTask is created
+3. WorkTasks are enqueued with priority 1 (default for scheduled tasks)
+4. Workers execute pipelines asynchronously
+5. Schedule's `last_run` is updated
+6. `next_run` is calculated from cron expression
+
+```go pkg/scheduler/service.go:217
+func (s *Service) executeJob(job *models.Schedule) {
+    log.Printf("Executing scheduled job: %s", job.Name)
+    
+    // Update last run time
+    now := time.Now()
+    job.LastRun = &now
+    
+    // Calculate next run
+    schedule, _ := cron.ParseStandard(job.CronSchedule)
+    nextRun := schedule.Next(now)
+    job.NextRun = &nextRun
+    
+    s.store.SaveSchedule(job)
+    
+    // Create WorkTasks for all pipelines
+    for _, pipelineID := range job.Pipelines {
+        pipeline, _ := s.pipelineService.Get(pipelineID)
+        
+        workTask := &models.WorkTask{
+            ID:       uuid.New().String(),
+            Type:     models.WorkTaskTypePipelineExecution,
+            Status:   models.WorkTaskStatusQueued,
+            Priority: 1,
+            TaskSpec: models.TaskSpec{
+                PipelineID: pipelineID,
+                ProjectID:  pipeline.ProjectID,
+                Parameters: map[string]interface{}{
+                    "trigger_type":  "scheduled",
+                    "triggered_by":  job.ID,
+                    "schedule_name": job.Name,
+                },
+            },
+            ResourceRequirements: models.ResourceRequirements{
+                CPU:    "500m",
+                Memory: "1Gi",
+            },
+        }
+        
+        s.queue.Enqueue(workTask)
+    }
+}
+```
+
+## Managing Schedules
+
+### Listing Schedules
+
+```bash
+# All schedules for a project
+curl http://localhost:8080/api/projects/proj-uuid-1234/schedules
+
+# All schedules (admin)
+curl http://localhost:8080/api/schedules
+```
+
+### Getting a Schedule
+
+```bash
+curl http://localhost:8080/api/schedules/sched-uuid-5555
+```
+
+### Updating a Schedule
+
+```bash
+curl -X PATCH http://localhost:8080/api/schedules/sched-uuid-5555 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cron_schedule": "0 3 * * *",
+    "description": "Import at 3 AM instead of 2 AM",
+    "enabled": true
+  }'
+```
+
+<Info>
+Updating a schedule recalculates `next_run` based on the new cron expression.
+</Info>
+
+### Disabling a Schedule
+
+```bash
+curl -X PATCH http://localhost:8080/api/schedules/sched-uuid-5555 \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
+
+### Deleting a Schedule
+
+```bash
+curl -X DELETE http://localhost:8080/api/schedules/sched-uuid-5555
+```
+
+## Use Cases
+
+<Tabs>
+  <Tab title="Data Ingestion">
+    **Daily customer import:**
+    ```json
+    {
+      "name": "daily-customer-import",
+      "cron_schedule": "0 2 * * *",
+      "pipelines": ["customer-import-pipeline"],
+      "description": "Import customers from CRM every night"
+    }
+    ```
+
+    Runs nightly at 2 AM to fetch fresh customer data.
+  </Tab>
+
+  <Tab title="Model Retraining">
+    **Weekly model update:**
+    ```json
+    {
+      "name": "weekly-model-retrain",
+      "cron_schedule": "0 0 * * 0",
+      "pipelines": [
+        "fetch-training-data",
+        "trigger-model-training"
+      ],
+      "description": "Retrain churn model every Sunday"
+    }
+    ```
+
+    Retrains ML models weekly with fresh data.
+  </Tab>
+
+  <Tab title="Digital Twin Sync">
+    **Hourly twin update:**
+    ```json
+    {
+      "name": "hourly-twin-sync",
+      "cron_schedule": "0 * * * *",
+      "pipelines": ["sync-digital-twin"],
+      "description": "Sync digital twin every hour"
+    }
+    ```
+
+    Keeps digital twin entities up-to-date.
+  </Tab>
+
+  <Tab title="Report Generation">
+    **Daily reports:**
+    ```json
+    {
+      "name": "daily-reports",
+      "cron_schedule": "0 8 * * 1-5",
+      "pipelines": [
+        "generate-sales-report",
+        "generate-inventory-report",
+        "email-reports"
+      ],
+      "description": "Generate and email reports weekdays at 8 AM"
+    }
+    ```
+
+    Automates report generation on business days.
+  </Tab>
+</Tabs>
+
+## Monitoring Schedule Execution
+
+Check when schedules last ran and when they'll run next:
+
+```bash
+curl http://localhost:8080/api/schedules/sched-uuid-5555
+```
+
+**Response:**
+```json
+{
+  "id": "sched-uuid-5555",
+  "name": "daily-customer-import",
+  "cron_schedule": "0 2 * * *",
+  "enabled": true,
+  "last_run": "2026-03-01T02:00:00Z",
+  "next_run": "2026-03-02T02:00:00Z",
+  "pipelines": ["pipe-uuid-5678"]
+}
+```
+
+Use `last_run` and `next_run` to verify schedule health.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Off-Peak Scheduling" icon="moon">
+    Schedule resource-intensive jobs during off-peak hours:
+
+    ```bash
+    # 2 AM is typically low-traffic
+    0 2 * * *
+
+    # Weekends for batch processing
+    0 0 * * 0,6
+    ```
+
+    Reduces impact on production systems.
+  </Accordion>
+
+  <Accordion title="Timezone Awareness" icon="globe">
+    Schedules run in the orchestrator's timezone (default: UTC).
+
+    Configure project timezone:
+    ```json
+    {
+      "settings": {
+        "timezone": "America/New_York"
+      }
+    }
+    ```
+
+    Or adjust cron expressions for local time:
+    - 9 AM EST = `14 * * * *` (UTC)
+    - 2 PM PST = `22 * * * *` (UTC)
+  </Accordion>
+
+  <Accordion title="Pipeline Ordering" icon="arrow-down-1-9">
+    Pipelines execute **concurrently** by default. For sequential execution:
+
+    **Option 1**: Create separate schedules with staggered times
+    ```json
+    {"cron_schedule": "0 2 * * *", "pipelines": ["step-1"]}
+    {"cron_schedule": "30 2 * * *", "pipelines": ["step-2"]}
+    ```
+
+    **Option 2**: Chain pipelines internally (one pipeline calls another)
+  </Accordion>
+
+  <Accordion title="Error Handling" icon="triangle-exclamation">
+    Schedule continues even if pipeline fails. To implement retries:
+
+    1. Check pipeline execution status via API
+    2. Create a monitoring schedule that checks for failed executions
+    3. Trigger retry pipeline for failures
+
+    Or build retry logic into the pipeline itself.
+  </Accordion>
+
+  <Accordion title="Testing Schedules" icon="vial">
+    Test cron expressions before deployment:
+
+    **Online tools:**
+    - https://crontab.guru/
+    - https://crontab.cronhub.io/
+
+    **Dry run:**
+    Create schedule as disabled, verify `next_run`, then enable.
+  </Accordion>
+</AccordionGroup>
+
+## Validation
+
+<AccordionGroup>
+  <Accordion title="Cron Expression" icon="check">
+    Expression is validated using standard cron parser:
+
+    ```go pkg/scheduler/service.go:308
+    if _, err := cron.ParseStandard(req.CronSchedule); err != nil {
+        return fmt.Errorf("invalid cron expression: %w", err)
+    }
+    ```
+
+    Invalid expressions are rejected at creation time.
+  </Accordion>
+
+  <Accordion title="Pipeline Existence" icon="magnifying-glass">
+    All pipeline IDs are verified before schedule creation:
+
+    ```go pkg/scheduler/service.go:301
+    for _, pipelineID := range req.Pipelines {
+        if _, err := s.pipelineService.Get(pipelineID); err != nil {
+            return fmt.Errorf("pipeline not found: %s", pipelineID)
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Schedule Name" icon="signature">
+    Schedule names must be non-empty but don't need to be unique.
+
+    Use descriptive names:
+    - `daily-customer-import`
+    - `weekly-model-retrain`
+    - `hourly-metrics-sync`
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Schedule Not Running" icon="question">
+    **Check status:**
+    ```bash
+    curl http://localhost:8080/api/schedules/sched-uuid-5555
+    ```
+
+    Verify:
+    - `enabled: true`
+    - `next_run` is in the future
+    - Orchestrator service is running
+    - Scheduler was started (`Start()` called)
+  </Accordion>
+
+  <Accordion title="Pipeline Failures" icon="xmark">
+    Check pipeline execution logs:
+    ```bash
+    curl http://localhost:8080/api/pipelines/pipe-uuid-5678/executions
+    ```
+
+    Look for:
+    - `status: "failed"`
+    - `error` field with failure reason
+    - `trigger_type: "scheduled"`
+  </Accordion>
+
+  <Accordion title="Missed Executions" icon="clock">
+    If orchestrator is down during scheduled time, execution is **skipped**.
+
+    Schedules do not queue missed runs. Next execution occurs at `next_run`.
+
+    For critical jobs, implement gap detection:
+    ```sparql
+    SELECT ?lastRun WHERE {
+      ?schedule :lastRun ?lastRun .
+      FILTER (?lastRun < NOW() - DURATION("PT25H"))
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Pipelines" icon="workflow" href="/features/pipelines">
+    Create pipelines to schedule.
+  </Card>
+  <Card title="Projects" icon="folder" href="/features/projects">
+    Organize schedules within projects.
+  </Card>
+  <Card title="Digital Twins" icon="clone" href="/features/digital-twins">
+    Schedule digital twin synchronization.
+  </Card>
+</CardGroup>

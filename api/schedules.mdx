@@ -1,0 +1,165 @@
+---
+title: 'Schedules API'
+description: 'Create and manage cron-based pipeline schedules'
+---
+
+## List Schedules
+
+Returns all schedules.
+
+```bash
+curl -X GET http://localhost:8080/api/schedules
+```
+
+### Response
+
+<ResponseField name="schedules" type="array">
+  Array of schedule objects
+  <Expandable title="Schedule Object">
+    <ResponseField name="id" type="string">Schedule ID</ResponseField>
+    <ResponseField name="project_id" type="string">Associated project ID</ResponseField>
+    <ResponseField name="name" type="string">Schedule name</ResponseField>
+    <ResponseField name="pipelines" type="array">Array of pipeline IDs to execute</ResponseField>
+    <ResponseField name="cron_schedule" type="string">Cron expression (e.g., "0 0 * * *")</ResponseField>
+    <ResponseField name="enabled" type="boolean">Whether schedule is enabled</ResponseField>
+    <ResponseField name="created_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="updated_at" type="string">ISO 8601 timestamp</ResponseField>
+    <ResponseField name="last_run" type="string">ISO 8601 timestamp of last execution</ResponseField>
+    <ResponseField name="next_run" type="string">ISO 8601 timestamp of next scheduled execution</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create Schedule
+
+Creates a new schedule.
+
+```bash
+curl -X POST http://localhost:8080/api/schedules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "proj-123",
+    "name": "Daily Sensor Data Processing",
+    "pipelines": ["pipe-456", "pipe-789"],
+    "cron_schedule": "0 2 * * *",
+    "enabled": true
+  }'
+```
+
+### Request Body
+
+<ParamField body="project_id" type="string" required>
+  Project ID to associate with
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Schedule name
+</ParamField>
+
+<ParamField body="pipelines" type="array" required>
+  Array of pipeline IDs to execute
+</ParamField>
+
+<ParamField body="cron_schedule" type="string" required>
+  Cron expression defining the schedule
+  
+  Examples:
+  - `"0 * * * *"` - Every hour
+  - `"0 0 * * *"` - Daily at midnight
+  - `"0 2 * * MON"` - Every Monday at 2 AM
+  - `"*/15 * * * *"` - Every 15 minutes
+</ParamField>
+
+<ParamField body="enabled" type="boolean" optional>
+  Whether schedule is enabled (defaults to true)
+</ParamField>
+
+### Response
+
+Returns the created schedule object.
+
+---
+
+## Get Schedule
+
+Returns a single schedule by ID.
+
+```bash
+curl -X GET http://localhost:8080/api/schedules/sched-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Schedule ID
+</ParamField>
+
+### Response
+
+Returns the schedule object (see List Schedules for schema).
+
+---
+
+## Update Schedule
+
+Updates a schedule's configuration.
+
+```bash
+curl -X PUT http://localhost:8080/api/schedules/sched-123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cron_schedule": "0 3 * * *",
+    "enabled": false
+  }'
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Schedule ID
+</ParamField>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="name" type="string" optional>
+  New name
+</ParamField>
+
+<ParamField body="pipelines" type="array" optional>
+  New pipelines array (replaces existing)
+</ParamField>
+
+<ParamField body="cron_schedule" type="string" optional>
+  New cron expression
+</ParamField>
+
+<ParamField body="enabled" type="boolean" optional>
+  New enabled status
+</ParamField>
+
+### Response
+
+Returns the updated schedule object.
+
+---
+
+## Delete Schedule
+
+Deletes a schedule.
+
+```bash
+curl -X DELETE http://localhost:8080/api/schedules/sched-123
+```
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Schedule ID
+</ParamField>
+
+### Response
+
+Returns `204 No Content` on success.
