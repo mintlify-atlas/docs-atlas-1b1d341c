@@ -1,0 +1,130 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Mimir AIP",
+  "projectDescription": "An ontology-driven platform for data aggregation, processing, and analysis with AI agent integration.",
+  "theme": "sequoia",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#60A5FA",
+  "darkColor": "#1E40AF",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/terminology",
+              "concepts/data-model",
+              "concepts/cir-format"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker-compose",
+              "deployment/kubernetes",
+              "deployment/configuration"
+            ]
+          },
+          {
+            "group": "Platform Features",
+            "pages": [
+              "features/projects",
+              "features/pipelines",
+              "features/ontologies",
+              "features/storage",
+              "features/ml-models",
+              "features/digital-twins",
+              "features/schedules"
+            ]
+          },
+          {
+            "group": "MCP Integration",
+            "pages": [
+              "mcp/overview",
+              "mcp/setup",
+              "mcp/tools-reference"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "advanced/plugin-development",
+              "advanced/custom-storage",
+              "advanced/performance-tuning",
+              "advanced/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/projects",
+              "api/pipelines",
+              "api/ontologies",
+              "api/storage",
+              "api/ml-models",
+              "api/digital-twins",
+              "api/schedules",
+              "api/tasks"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Ontology-driven data modeling with OWL/Turtle support",
+    "Multi-backend storage (PostgreSQL, MySQL, MongoDB, S3, Redis, Elasticsearch, Neo4j)",
+    "Pipeline-based data ingestion and processing",
+    "ML model training and inference (Decision Trees, Random Forest, Regression, Neural Networks)",
+    "Digital twin management with SPARQL query engine",
+    "Model Context Protocol (MCP) integration with 55 tools for AI agents",
+    "Kubernetes-native worker execution",
+    "Common Internal Representation (CIR) for unified data format"
+  ],
+  "publicApiSurface": [
+    "GET /api/projects",
+    "POST /api/projects",
+    "GET /api/pipelines",
+    "POST /api/pipelines",
+    "POST /api/pipelines/{id}/execute",
+    "GET /api/ontologies",
+    "POST /api/ontologies",
+    "GET /api/storage",
+    "POST /api/storage",
+    "POST /api/storage/{id}/store",
+    "GET /api/ml-models",
+    "POST /api/ml-models",
+    "POST /api/ml-models/{id}/train",
+    "POST /api/ml-models/{id}/infer",
+    "GET /api/digital-twins",
+    "POST /api/digital-twins",
+    "POST /api/digital-twins/{id}/sync",
+    "POST /api/digital-twins/{id}/query",
+    "GET /api/schedules",
+    "POST /api/schedules",
+    "/mcp/sse - MCP Server-Sent Events endpoint"
+  ]
+}
