@@ -1,0 +1,191 @@
+---
+title: 'LLM API'
+description: 'Manage LLM providers and models for enhanced extraction'
+---
+
+## Overview
+
+The LLM API provides endpoints for managing Large Language Model integration. LLM features power ontology generation from natural language and entity extraction from unstructured data.
+
+## List Available Models
+
+Get available LLM models from the configured provider.
+
+```bash
+curl -X GET http://localhost:8080/api/llm/models
+```
+
+**Response (LLM enabled):**
+```json
+{
+  "provider": "openrouter",
+  "enabled": true,
+  "models": [
+    {
+      "id": "anthropic/claude-3-opus",
+      "name": "Claude 3 Opus",
+      "context_length": 200000
+    },
+    {
+      "id": "openai/gpt-4",
+      "name": "GPT-4",
+      "context_length": 8192
+    }
+  ]
+}
+```
+
+**Response (LLM not configured):**
+```json
+{
+  "provider": "none",
+  "enabled": false,
+  "models": []
+}
+```
+
+<ResponseField name="provider" type="string">
+  Provider name (`openrouter`, `openai_compat`, or `none`)
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean">
+  Whether LLM features are available
+</ResponseField>
+
+<ResponseField name="models" type="array">
+  Available model list (cached with TTL)
+</ResponseField>
+
+## Configuration
+
+LLM integration is configured via environment variables:
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `LLM_ENABLED` | Enable LLM features | `true` |
+| `LLM_PROVIDER` | Provider type | `openrouter` or `openai_compat` |
+| `LLM_API_KEY` | API key | `sk-...` |
+| `LLM_BASE_URL` | Base URL (openai_compat only) | `https://api.together.xyz/v1` |
+| `LLM_MODEL` | Default model | `anthropic/claude-3-opus` |
+
+### OpenRouter Provider
+
+```bash
+LLM_ENABLED=true
+LLM_PROVIDER=openrouter
+LLM_API_KEY=sk-or-v1-...
+LLM_MODEL=anthropic/claude-3-opus
+```
+
+### OpenAI-Compatible Provider
+
+```bash
+LLM_ENABLED=true
+LLM_PROVIDER=openai_compat
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=https://api.together.xyz/v1
+LLM_MODEL=meta-llama/Llama-3-70b-chat-hf
+```
+
+---
+
+## External LLM Providers
+
+Dynamically install custom LLM provider plugins from Go source repositories.
+
+### List External Providers
+
+Get all installed external LLM providers.
+
+```bash
+curl -X GET http://localhost:8080/api/llm/providers
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "ollama",
+    "description": "Local Ollama instance",
+    "repository": "https://github.com/example/mimir-llm-ollama",
+    "version": "v1.0.0",
+    "installed_at": "2026-03-01T10:00:00Z",
+    "loaded": true
+  }
+]
+```
+
+<ResponseField name="name" type="string">
+  Provider identifier
+</ResponseField>
+
+<ResponseField name="loaded" type="boolean">
+  Whether the provider .so is currently loaded
+</ResponseField>
+
+### Install External Provider
+
+Install an external LLM provider from a Git repository.
+
+```bash
+curl -X POST http://localhost:8080/api/llm/providers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ollama",
+    "repository": "https://github.com/example/mimir-llm-ollama",
+    "version": "v1.0.0",
+    "description": "Local Ollama instance"
+  }'
+```
+
+<ParamField path="name" type="string" required>
+  Unique provider identifier
+</ParamField>
+
+<ParamField path="repository" type="string" required>
+  Git repository URL. Must export `var Provider` satisfying the LLM provider interface.
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  Git tag, branch, or commit SHA
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description
+</ParamField>
+
+**Response:** `201 Created` or `422 Unprocessable Entity` (compilation failure)
+
+### Get External Provider
+
+Get details for a specific external provider.
+
+```bash
+curl -X GET http://localhost:8080/api/llm/providers/ollama
+```
+
+### Uninstall External Provider
+
+Remove an external LLM provider.
+
+```bash
+curl -X DELETE http://localhost:8080/api/llm/providers/ollama
+```
+
+**Response:** `204 No Content`
+
+<Note>
+  Go plugins cannot be unloaded from memory. An orchestrator restart is required for full removal.
+</Note>
+
+## LLM Features
+
+LLM integration powers:
+
+- **Ontology Generation**: Generate OWL ontologies from natural language descriptions
+- **Entity Extraction**: Extract structured entities from unstructured text, documents, and media
+- **Schema Inference**: Infer entity types and relationships from raw data
+
+See:
+- [Ontology Extraction](/api/ontologies#extract-ontology-from-data)
+- [Ontology Features](/features/ontologies)

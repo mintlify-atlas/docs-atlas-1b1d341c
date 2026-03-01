@@ -99,7 +99,9 @@
               "api/ml-models",
               "api/digital-twins",
               "api/schedules",
-              "api/tasks"
+              "api/tasks",
+              "api/plugins",
+              "api/llm"
             ]
           }
         ]

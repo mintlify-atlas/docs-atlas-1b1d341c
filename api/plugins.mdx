@@ -1,0 +1,211 @@
+---
+title: 'Plugins API'
+description: 'Manage pipeline and storage plugins'
+---
+
+## Pipeline Plugins
+
+Pipeline plugins extend Mimir AIP with custom pipeline step actions compiled from Go source at runtime.
+
+### List Pipeline Plugins
+
+Get all installed pipeline plugins.
+
+```bash
+curl -X GET http://localhost:8080/api/plugins
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "http-auth",
+    "description": "HTTP request with OAuth2 authentication",
+    "repository": "https://github.com/example/mimir-plugin-http-auth",
+    "version": "v1.2.0",
+    "installed_at": "2026-03-01T10:00:00Z"
+  }
+]
+```
+
+<ResponseField name="name" type="string">
+  Plugin identifier
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Human-readable description
+</ResponseField>
+
+<ResponseField name="repository" type="string">
+  Git repository URL
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Git tag or branch
+</ResponseField>
+
+<ResponseField name="installed_at" type="string">
+  ISO 8601 timestamp
+</ResponseField>
+
+### Install Pipeline Plugin
+
+Install a pipeline plugin from a Git repository.
+
+```bash
+curl -X POST http://localhost:8080/api/plugins \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "http-auth",
+    "repository": "https://github.com/example/mimir-plugin-http-auth",
+    "version": "v1.2.0",
+    "description": "HTTP request with OAuth2 authentication"
+  }'
+```
+
+<ParamField path="name" type="string" required>
+  Unique plugin identifier
+</ParamField>
+
+<ParamField path="repository" type="string" required>
+  Git repository URL (must be accessible)
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  Git tag, branch, or commit SHA
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description
+</ParamField>
+
+**Response:** `201 Created`
+
+<Info>
+  Workers clone and compile plugins at runtime. Ensure Go 1.21+ is available in the worker image.
+</Info>
+
+### Get Pipeline Plugin
+
+Get details for a specific pipeline plugin.
+
+```bash
+curl -X GET http://localhost:8080/api/plugins/http-auth
+```
+
+### Update Pipeline Plugin
+
+Pull the latest version from the plugin's repository.
+
+```bash
+curl -X PUT http://localhost:8080/api/plugins/http-auth \
+  -H "Content-Type: application/json" \
+  -d '{
+    "version": "v1.3.0"
+  }'
+```
+
+### Uninstall Pipeline Plugin
+
+Remove a pipeline plugin.
+
+```bash
+curl -X DELETE http://localhost:8080/api/plugins/http-auth
+```
+
+**Response:** `204 No Content`
+
+---
+
+## Storage Plugins
+
+Storage plugins add custom storage backend support compiled from Go source at runtime.
+
+### List Storage Plugins
+
+Get all installed storage plugins.
+
+```bash
+curl -X GET http://localhost:8080/api/storage-plugins
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "cassandra",
+    "description": "Apache Cassandra storage backend",
+    "repository": "https://github.com/example/mimir-storage-cassandra",
+    "version": "v2.1.0",
+    "installed_at": "2026-03-01T10:00:00Z",
+    "loaded": true
+  }
+]
+```
+
+<ResponseField name="loaded" type="boolean">
+  Whether the plugin .so is currently loaded in memory
+</ResponseField>
+
+### Install Storage Plugin
+
+Install a storage plugin from a Git repository.
+
+```bash
+curl -X POST http://localhost:8080/api/storage-plugins \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "cassandra",
+    "repository": "https://github.com/example/mimir-storage-cassandra",
+    "version": "v2.1.0",
+    "description": "Apache Cassandra storage backend"
+  }'
+```
+
+<ParamField path="name" type="string" required>
+  Unique plugin identifier (used as storage config `plugin_type`)
+</ParamField>
+
+<ParamField path="repository" type="string" required>
+  Git repository URL. Must export `var Plugin` satisfying `models.StoragePlugin`.
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  Git tag, branch, or commit SHA
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description
+</ParamField>
+
+**Response:** `201 Created`
+
+<Warning>
+  The repository must export a Go variable named `Plugin` that implements the `models.StoragePlugin` interface.
+</Warning>
+
+### Get Storage Plugin
+
+Get details for a specific storage plugin.
+
+```bash
+curl -X GET http://localhost:8080/api/storage-plugins/cassandra
+```
+
+### Uninstall Storage Plugin
+
+Remove a storage plugin.
+
+```bash
+curl -X DELETE http://localhost:8080/api/storage-plugins/cassandra
+```
+
+**Response:** `204 No Content`
+
+<Note>
+  Go plugins cannot be unloaded from memory. An orchestrator restart is required for full removal.
+</Note>
+
+## Plugin Development
+
+See [Plugin Development](/advanced/plugin-development) for guidelines on creating custom plugins.
